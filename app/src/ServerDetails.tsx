@@ -320,12 +320,8 @@ function ServerDetails() {
   bedrockProxyAPI.off('console.output', handleConsoleOutput);
   bedrockProxyAPI.off('server.properties.updated', handlePropsUpdated);
   bedrockProxyAPI.off('server.properties.updateFailed', handlePropsFailed);
-      // unsubscribe from the specific events for this view
-      try {
-        bedrockProxyAPI.unsubscribe(['console.output', 'player.joined', 'player.left', 'server.statusChanged']);
-      } catch (e) {
-        // ignore
-      }
+      // Do NOT unsubscribe global event subscriptions here — other components
+      // (like ServerList) rely on those subscriptions. Only remove handlers above.
     };
   }, [handleServerUpdated, handleServerStatusChanged, handlePlayerJoined, handlePlayerLeft, handleConsoleOutput, loadServerData]);
 

@@ -273,8 +273,65 @@ function ServerList() {
     let isMounted = true;
 
     const initializeConnection = async () => {
-      if (isMounted) {
+      if (!isMounted) return;
+
+      try {
+        // If we're already connected, just load servers without touching the global guard
+        if (bedrockProxyAPI.isConnected()) {
+          setIsLoading(true);
+          try {
+            const list = await bedrockProxyAPI.getServers();
+            setServers(list);
+            setIsConnected(true);
+          } catch (e) {
+            console.warn('getServers after already-connected check failed', e);
+          } finally {
+            setIsLoading(false);
+          }
+          return;
+        }
+
+        // If another caller has set the global connecting guard, don't bail out — wait for it
+        if ((window as any).__bedrock_connecting) {
+          console.log('🔄 Another connect in progress — waiting for established');
+
+          let settled = false;
+
+          const onEstablished = async () => {
+            if (settled) return;
+            settled = true;
+            // refresh servers when connection is established
+            setIsLoading(true);
+            try {
+              const list = await bedrockProxyAPI.getServers();
+              setServers(list);
+              setIsConnected(true);
+            } catch (e) {
+              console.warn('getServers after connection established failed', e);
+            } finally {
+              setIsLoading(false);
+            }
+          };
+
+          bedrockProxyAPI.on('connection.established', onEstablished as any);
+
+          // Wait up to a short timeout for the other connect to finish, otherwise attempt our own connect
+          await new Promise((res) => setTimeout(res, 8000));
+
+          bedrockProxyAPI.off('connection.established', onEstablished as any);
+
+          if (!bedrockProxyAPI.isConnected()) {
+            // If still not connected, try to connect ourselves (this will clear the guard correctly)
+            await connectAndLoadData();
+          }
+
+          return;
+        }
+
+        // Normal path: no guard, attempt connect and load data
         await connectAndLoadData();
+      } catch (err) {
+        console.error('initializeConnection error', err);
       }
     };
 
@@ -330,6 +387,9 @@ function ServerList() {
     const handleConnectionUpdate = (d: any) => {
       setConnectionState((d && (d.status || d)) ?? null);
     };
+    // stable callbacks for connection state so we can remove only our handlers on cleanup
+    const onConnectedCallback = () => handleConnectionUpdate({ status: "connected" });
+    const onDisconnectedCallback = () => handleConnectionUpdate({ status: "disconnected" });
 
     // live console log (for overview)
     const handleConsoleOutput = (data: any) => {
@@ -434,12 +494,8 @@ function ServerList() {
       "latencyUpdate",
       handleConnectionLatency as any
     );
-    bedrockProxyAPI.onConnection("connected", () =>
-      handleConnectionUpdate({ status: "connected" })
-    );
-    bedrockProxyAPI.onConnection("disconnected", () =>
-      handleConnectionUpdate({ status: "disconnected" })
-    );
+    bedrockProxyAPI.onConnection("connected", onConnectedCallback as any);
+    bedrockProxyAPI.onConnection("disconnected", onDisconnectedCallback as any);
   bedrockProxyAPI.on("console.output", handleConsoleOutput);
   bedrockProxyAPI.on('backend.autoStartResult', handleAutoStartResult as any);
   bedrockProxyAPI.on('connection.established', onConnected as any);
@@ -456,8 +512,9 @@ function ServerList() {
         "latencyUpdate",
         handleConnectionLatency as any
       );
-      bedrockProxyAPI.offConnection("connected");
-      bedrockProxyAPI.offConnection("disconnected");
+      // remove only callbacks we registered above
+      bedrockProxyAPI.offConnection("connected", onConnectedCallback as any);
+      bedrockProxyAPI.offConnection("disconnected", onDisconnectedCallback as any);
     bedrockProxyAPI.off("console.output", handleConsoleOutput);
   bedrockProxyAPI.off('backend.autoStartResult', handleAutoStartResult as any);
   bedrockProxyAPI.off('connection.established', onConnected as any);
