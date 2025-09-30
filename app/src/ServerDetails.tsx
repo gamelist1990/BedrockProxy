@@ -28,13 +28,14 @@ import {
   InputLabel,
   CircularProgress,
   Alert,
+  Snackbar,
+  Button,
 } from "@mui/material";
 import ArrowBackRoundedIcon from "@mui/icons-material/ArrowBackRounded";
 import { useLanguageContext } from "./contexts/LanguageContext";
 import PlayArrowRoundedIcon from "@mui/icons-material/PlayArrowRounded";
 import StopRoundedIcon from "@mui/icons-material/StopRounded";
 import RestartAltRoundedIcon from "@mui/icons-material/RestartAltRounded";
-import SecurityRoundedIcon from "@mui/icons-material/SecurityRounded";
 import { bedrockProxyAPI, type Server, type Player, type ServerStatus } from "./API";
 
 const fallbackEmojis = ["🪵", "🧱", "🧭", "🛡️", "⚙️", "🛠️", "🧊", "🔥"];
@@ -99,6 +100,18 @@ function ServerDetails() {
   // プレイヤーIP表示設定（プライバシー配慮のためデフォルトは false）
   const [showPlayerIPs, setShowPlayerIPs] = useState(false);
 
+  // Editable basic settings (controlled inputs)
+  const [editName, setEditName] = useState<string>("");
+  const [editDestIP, setEditDestIP] = useState<string>("");
+  const [editDestPort, setEditDestPort] = useState<string>("");
+  const [editMaxPlayers, setEditMaxPlayers] = useState<number>(0);
+  const [editIconUrl, setEditIconUrl] = useState<string>("");
+
+  // Snackbar for notifications
+  const [snackbarOpen, setSnackbarOpen] = useState(false);
+  const [snackbarMessage, setSnackbarMessage] = useState("");
+  const [snackbarSeverity, setSnackbarSeverity] = useState<'success' | 'error' | 'info' | 'warning'>('info');
+
   // サーバーデータの読み込み
   const loadServerData = useCallback(async () => {
     if (!id) {
@@ -113,6 +126,12 @@ function ServerDetails() {
       
       const data = await bedrockProxyAPI.getServerDetails(id);
       setServer(data.server);
+  // initialize editable fields
+  setEditName(data.server.name || '');
+  setEditDestIP(data.server.destinationAddress?.split(':')[0] || '127.0.0.1');
+  setEditDestPort(data.server.destinationAddress?.split(':')[1] || '19133');
+  setEditMaxPlayers(data.server.maxPlayers || 0);
+  setEditIconUrl(data.server.iconUrl || '');
       // Load per-server preference for showing player IPs from localStorage
       try {
         const key = `bp_showPlayerIPs_${data.server.id}`;
@@ -259,14 +278,33 @@ function ServerDetails() {
     bedrockProxyAPI.on('player.joined', handlePlayerJoined);
     bedrockProxyAPI.on('player.left', handlePlayerLeft);
     bedrockProxyAPI.on('console.output', handleConsoleOutput);
+    // server.properties update notifications
+    const handlePropsUpdated = (d: any) => {
+      if (d?.serverId === id) {
+        setSnackbarMessage(t('settings.saveSuccess') || 'Saved server properties');
+        setSnackbarSeverity('success');
+        setSnackbarOpen(true);
+      }
+    };
+    const handlePropsFailed = (d: any) => {
+      if (d?.serverId === id) {
+        setSnackbarMessage(t('settings.saveFailed') || `Failed to update server.properties: ${d?.error ?? ''}`);
+        setSnackbarSeverity('error');
+        setSnackbarOpen(true);
+      }
+    };
+    bedrockProxyAPI.on('server.properties.updated', handlePropsUpdated);
+    bedrockProxyAPI.on('server.properties.updateFailed', handlePropsFailed);
 
     return () => {
       isMounted = false;
-      bedrockProxyAPI.off('server.updated', handleServerUpdated);
-      bedrockProxyAPI.off('server.statusChanged', handleServerStatusChanged);
-      bedrockProxyAPI.off('player.joined', handlePlayerJoined);
-      bedrockProxyAPI.off('player.left', handlePlayerLeft);
-      bedrockProxyAPI.off('console.output', handleConsoleOutput);
+  bedrockProxyAPI.off('server.updated', handleServerUpdated);
+  bedrockProxyAPI.off('server.statusChanged', handleServerStatusChanged);
+  bedrockProxyAPI.off('player.joined', handlePlayerJoined);
+  bedrockProxyAPI.off('player.left', handlePlayerLeft);
+  bedrockProxyAPI.off('console.output', handleConsoleOutput);
+  bedrockProxyAPI.off('server.properties.updated', handlePropsUpdated);
+  bedrockProxyAPI.off('server.properties.updateFailed', handlePropsFailed);
       // unsubscribe from the specific events for this view
       try {
         bedrockProxyAPI.unsubscribe(['console.output', 'player.joined', 'player.left', 'server.statusChanged']);
@@ -315,7 +353,7 @@ function ServerDetails() {
   const availableSlots = Math.max(server.maxPlayers - server.playersOnline, 0);
 
   // サーバー操作
-  const handleServerAction = async (action: 'start' | 'stop' | 'restart' | 'block') => {
+  const handleServerAction = async (action: 'start' | 'stop' | 'restart') => {
     try {
       const updated = await bedrockProxyAPI.performServerAction(server.id, action);
       if (updated) {
@@ -543,7 +581,7 @@ function ServerDetails() {
               <Grid container spacing={3} className="overview-grid">
                 <Grid size={{ xs: 12, md: 6 }}>
                   <Stack spacing={2} className="form-stack">
-                    <TextField className="form-field" label={t('form.serverName')} defaultValue={server.name} fullWidth />
+                    <TextField className="form-field" label={t('form.serverName')} value={editName} onChange={(e) => setEditName(e.target.value)} fullWidth />
                     
                     <Box className="proxy-config">
                       <Typography variant="subtitle2" gutterBottom>
@@ -577,13 +615,15 @@ function ServerDetails() {
                         <TextField 
                           className="form-field" 
                           label={t('settings.destinationIPv4')} 
-                          defaultValue={server.destinationAddress?.split(':')[0] || '127.0.0.1'} 
+                          value={editDestIP}
+                          onChange={(e) => setEditDestIP(e.target.value)}
                           fullWidth 
                         />
                         <TextField 
                           className="form-field" 
                           label={t('settings.destinationPort')} 
-                          defaultValue={server.destinationAddress?.split(':')[1] || '19133'} 
+                          value={editDestPort}
+                          onChange={(e) => setEditDestPort(e.target.value)}
                           type="number" 
                           style={{ minWidth: 120 }}
                           helperText=" "
@@ -591,8 +631,32 @@ function ServerDetails() {
                       </Stack>
                     </Box>
 
-                    <TextField className="form-field" label={t('form.maxPlayers')} defaultValue={server.maxPlayers} type="number" fullWidth />
-                    <TextField className="form-field" label={t('form.iconUrl')} defaultValue={server.iconUrl || ""} fullWidth />
+                    <TextField className="form-field" label={t('form.maxPlayers')} value={String(editMaxPlayers)} onChange={(e) => setEditMaxPlayers(Number(e.target.value))} type="number" fullWidth />
+                    <TextField className="form-field" label={t('form.iconUrl')} value={editIconUrl} onChange={(e) => setEditIconUrl(e.target.value)} fullWidth />
+
+                    <Stack direction="row" spacing={2} justifyContent="flex-end" sx={{ mt: 1 }}>
+                      <Button variant="contained" color="primary" onClick={async () => {
+                        // Save basic settings: name, destinationAddress, maxPlayers, iconUrl
+                        try {
+                          const dest = `${editDestIP}:${editDestPort}`;
+                          const updates: any = {
+                            name: editName,
+                            destinationAddress: dest,
+                            maxPlayers: editMaxPlayers,
+                            iconUrl: editIconUrl || undefined,
+                          };
+                          await bedrockProxyAPI.updateServer(server.id, updates);
+                          setSnackbarMessage(t('settings.saveTriggered') || 'Saving...');
+                          setSnackbarSeverity('info');
+                          setSnackbarOpen(true);
+                        } catch (err) {
+                          console.error('Failed to save settings', err);
+                          setSnackbarMessage(t('settings.saveFailed') || 'Failed to save settings');
+                          setSnackbarSeverity('error');
+                          setSnackbarOpen(true);
+                        }
+                      }}> {t('form.save') } </Button>
+                    </Stack>
                   </Stack>
                 </Grid>
                 <Grid size={{ xs: 12, md: 6 }}>
@@ -877,16 +941,7 @@ function ServerDetails() {
                       <RestartAltRoundedIcon />
                     </IconButton>
                   </Tooltip>
-                  <Tooltip title={t('operations.block')}>
-                    <IconButton 
-                      color="primary" 
-                      size="large" 
-                      className="action-button"
-                      onClick={() => handleServerAction('block')}
-                    >
-                      <SecurityRoundedIcon />
-                    </IconButton>
-                  </Tooltip>
+                  
                 </Stack>
 
                 <Divider />
@@ -1007,7 +1062,12 @@ function ServerDetails() {
           </TabPanel>
         </Card>
       </Stack>
-    </Box>
+      <Snackbar open={snackbarOpen} autoHideDuration={6000} onClose={() => setSnackbarOpen(false)}>
+        <Alert onClose={() => setSnackbarOpen(false)} severity={snackbarSeverity} sx={{ width: '100%' }}>
+          {snackbarMessage}
+        </Alert>
+      </Snackbar>
+      </Box>
   );
   }
 

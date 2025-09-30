@@ -81,6 +81,7 @@ export const ja_JP = {
   "form.destinationPort": "宛先ポート",
   "form.address": "アドレス",
   "form.port": "ポート",
+  "form.save": "保存",
   
   // 言語選択
   "lang.select": "言語を選択",
@@ -141,6 +142,9 @@ export const ja_JP = {
   
   // 設定関連
   "settings.basic": "基本設定",
+  "settings.playerList": "プレイヤー一覧",
+  "settings.showPlayerIPs": "プレイヤーのIPを表示",
+  "settings.showPlayerIPsDesc": "プライバシー保護のためデフォルトでは無効。サーバーごとに保存されます。",
   "settings.receiving": "受信設定（Proxyが受け付けるポート）",
   "settings.receivingIPv4": "受信IPv4",
   "settings.receivingPort": "受信ポート",
@@ -153,6 +157,9 @@ export const ja_JP = {
   "settings.backupForward": "予備転送設定",
   "settings.backupDestination": "予備転送先",
   "settings.forwardDisabled": "無効（予備転送なし）",
+  "settings.saveSuccess": "サーバー設定を保存しました",
+  "settings.saveFailed": "サーバー設定の保存に失敗しました",
+  "settings.saveTriggered": "保存処理を開始しました",
   
   // プレイヤー関連
   "players.overview": "プレイヤー概要",

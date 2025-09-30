@@ -35,7 +35,6 @@ import LanguageIcon from "@mui/icons-material/Language";
 import { LanguageProvider, useLanguageContext } from "./contexts/LanguageContext";
 import PlayArrowRoundedIcon from "@mui/icons-material/PlayArrowRounded";
 import StopRoundedIcon from "@mui/icons-material/StopRounded";
-import SecurityRoundedIcon from "@mui/icons-material/SecurityRounded";
 import SettingsRoundedIcon from "@mui/icons-material/SettingsRounded";
 import AddIcon from "@mui/icons-material/Add";
 import { bedrockProxyAPI, type Server, type ServerStatus } from "./API";
@@ -261,7 +260,7 @@ function ServerList() {
     };
   }, [servers]);
 
-  const handleAction = async (server: Server, action: "start" | "stop" | "restart" | "block") => {
+  const handleAction = async (server: Server, action: "start" | "stop" | "restart") => {
     const actionMessages = {
       start: t('server.actionStart'),
       stop: t('server.actionStop'),
@@ -625,17 +624,7 @@ function ServerList() {
                         </IconButton>
                       </span>
                     </Tooltip>
-                    <Tooltip title={t('operations.block')}>
-                      <span>
-                        <IconButton 
-                          color="primary" 
-                          disabled={!isConnected}
-                          onClick={() => handleAction(server, "block")}
-                        >
-                          <SecurityRoundedIcon />
-                        </IconButton>
-                      </span>
-                    </Tooltip>
+                    
                     <Tooltip title={t('server.openSettings')}>
                       <IconButton color="primary" onClick={() => navigate(`/server/${server.id}`)}>
                         <SettingsRoundedIcon />

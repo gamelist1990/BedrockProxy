@@ -244,7 +244,7 @@ export class BedrockProxyAPI {
   }
 
   // サーバー操作（開始/停止/再起動/ブロック）
-  public async performServerAction(id: string, action: 'start' | 'stop' | 'restart' | 'block', targetIP?: string): Promise<Server> {
+  public async performServerAction(id: string, action: 'start' | 'stop' | 'restart', targetIP?: string): Promise<Server> {
     const response = await this.sendRequest<{ server: Server }>('servers.action', { id, action, targetIP });
     return {
       ...response.server,

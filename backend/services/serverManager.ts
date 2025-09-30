@@ -20,6 +20,8 @@ export class ServerManager {
   private servers = new Map<string, Server>();
   private eventCallbacks = new Map<string, Function[]>();
   private udpProxies = new Map<string, UDPProxy>();
+  // serverId -> (clientKey -> { client, lastActivity })
+  private recentClientActivity = new Map<string, Map<string, { client: string; lastActivity: Date }>>();
   private initPromise: Promise<void> = Promise.resolve();
 
   constructor() {
@@ -76,16 +78,27 @@ export class ServerManager {
     if (!server || !server.players) return;
     
     // プレイヤーをサーバーのプレイヤーリストに追加
-    const existingPlayer = server.players.find(p => p.xuid === player.xuid);
+    const existingPlayer = server.players.find(p => p.xuid === player.xuid || p.name === player.name);
     if (!existingPlayer) {
       const newPlayer: Player = {
-        id: player.name,
+        id: player.xuid || randomUUID(),
         name: player.name,
         xuid: player.xuid,
-        joinTime: new Date(),
+        joinTime: player.timestamp ? new Date(player.timestamp) : new Date(),
         ipAddress: player.ipAddress
       };
-      
+
+      // Log inference detail for debugging
+      try {
+        if (player.ipAddress) {
+          logger.info('ServerManager', `Inferred IP for join: ${player.name}`, { serverId, playerName: player.name, ipAddress: player.ipAddress, xuid: player.xuid, timestamp: new Date().toISOString() });
+        } else {
+          logger.info('ServerManager', `No IP inferred at join for: ${player.name}`, { serverId, playerName: player.name, xuid: player.xuid, timestamp: new Date().toISOString() });
+        }
+      } catch (e) {
+        // ignore logging failures
+      }
+
       server.players.push(newPlayer);
       server.playersOnline = server.players.length;
       server.updatedAt = new Date();
@@ -98,7 +111,7 @@ export class ServerManager {
         currentPlayerCount: server.playersOnline
       });
       
-      logger.info('ServerManager', `Player joined: ${player.name}`, { serverId, playerName: player.name });
+      logger.info('ServerManager', `Player joined: ${player.name}`, { serverId, playerName: player.name, xuid: player.xuid, ipAddress: player.ipAddress });
     }
   }
   
@@ -334,6 +347,19 @@ export class ServerManager {
               targetPort: parseInt(destPort),
               timeout: 30000
             });
+            udpProxy.setConnectionActivityHandler((clientIP, clientPort /*, data */) => {
+              try {
+                const key = `${clientIP}:${clientPort}`;
+                let map = this.recentClientActivity.get(server.id);
+                if (!map) {
+                  map = new Map();
+                  this.recentClientActivity.set(server.id, map);
+                }
+                map.set(key, { client: key, lastActivity: new Date() });
+              } catch (e) {
+                // ignore
+              }
+            });
             await udpProxy.start();
             this.udpProxies.set(server.id, udpProxy);
 
@@ -375,9 +401,7 @@ export class ServerManager {
       case "restart":
         await this.restartServer(server);
         break;
-      case "block":
-        await this.blockIP(server, request.targetIP);
-        break;
+      
       default:
         throw new APIError(
           `Unknown action: ${request.action}`,
@@ -484,7 +508,7 @@ export class ServerManager {
       }
     });
 
-    processManager.on('consoleOutput', (data: any) => {
+  processManager.on('consoleOutput', (data: any) => {
       // コンソール出力イベントをそのまま転送
       this.emit('consoleOutput', data);
 
@@ -494,12 +518,16 @@ export class ServerManager {
         const connectMatch = rawLine.match(/Player connected: (.+), xuid: (\d+)/);
         if (connectMatch) {
           const [, playerName, xuid] = connectMatch;
-          this.handlePlayerJoined(data.serverId, { name: playerName, xuid, action: 'join', timestamp: data.timestamp } as PlayerPacket);
+          // Try to infer client IP from recent UDP activity for this server using the log timestamp
+          const ipAddress = this.findRecentClientIP(data.serverId, 10000, data.timestamp ? new Date(data.timestamp) : undefined);
+          this.handlePlayerJoined(data.serverId, { name: playerName, xuid, action: 'join', timestamp: data.timestamp, ipAddress } as PlayerPacket);
         }
         const disconnectMatch = rawLine.match(/Player disconnected: (.+), xuid: (\d+),/);
         if (disconnectMatch) {
           const [, playerName, xuid] = disconnectMatch;
-          this.handlePlayerLeft(data.serverId, { name: playerName, xuid, action: 'leave', timestamp: data.timestamp } as PlayerPacket);
+          // Try to infer client IP for symmetry (best-effort) using the log timestamp
+          const ipAddress = this.findRecentClientIP(data.serverId, 10000, data.timestamp ? new Date(data.timestamp) : undefined);
+          this.handlePlayerLeft(data.serverId, { name: playerName, xuid, action: 'leave', timestamp: data.timestamp, ipAddress } as PlayerPacket);
         }
       } catch (e) {
         // ignore
@@ -517,6 +545,50 @@ export class ServerManager {
         }
       }
     });
+  }
+
+  // UDPProxy の統計を参照して、最近アクティブだったクライアントの IP を返す（ベストエフォート）
+  private findRecentClientIP(serverId: string, maxAgeMs: number = 10000, referenceTime?: Date): string | undefined {
+    try {
+      const refMs = referenceTime ? referenceTime.getTime() : Date.now();
+
+      // First, check the in-memory recentClientActivity map populated by UDPProxy handlers
+      const activityMap = this.recentClientActivity.get(serverId);
+      if (activityMap && activityMap.size > 0) {
+        // Choose the client whose lastActivity is closest to the reference time (absolute difference),
+        // but within the maxAgeMs window.
+        const candidates = Array.from(activityMap.values())
+          .map(c => ({ client: c.client, lastActivity: c.lastActivity, delta: Math.abs(refMs - c.lastActivity.getTime()) }))
+          .filter(c => c.delta <= maxAgeMs)
+          .sort((a, b) => a.delta - b.delta);
+        if (candidates.length > 0) {
+          const best = candidates[0];
+          const parts = (best.client || '').split(':');
+          return parts[0] || undefined;
+        }
+      }
+
+      // Fallback: query UDPProxy.getStats() if available
+      const udpProxy = this.udpProxies.get(serverId);
+      if (!udpProxy) return undefined;
+
+      const stats: any = (udpProxy as any).getStats ? (udpProxy as any).getStats() : null;
+      if (!stats || !Array.isArray(stats.connections)) return undefined;
+
+      const recent = stats.connections
+        .map((c: any) => ({ client: c.client, lastActivity: new Date(c.lastActivity), delta: Math.abs(refMs - new Date(c.lastActivity).getTime()) }))
+        .filter((c: any) => c.delta <= maxAgeMs)
+        .sort((a: any, b: any) => a.delta - b.delta)[0];
+
+      if (!recent) return undefined;
+
+      const clientStr: string = recent.client || '';
+      const parts = clientStr.split(':');
+      return parts[0] || undefined;
+    } catch (err) {
+      // 予期せぬエラーは無視して undefined を返す
+      return undefined;
+    }
   }
 
   // server.properties を更新するヘルパー
@@ -562,9 +634,12 @@ export class ServerManager {
       // 書き込み（上書き）
       await writeFile(propsPath, updatedLines.join('\n'), 'utf-8');
       logger.info('ServerManager', `Updated server.properties for ${server.name}`, { path: propsPath, changes });
+      // emit success event
+      this.emit('serverPropertiesUpdated', { serverId: server.id, path: propsPath, changes });
     } catch (err) {
       // ファイルが存在しないか書き込み権限がない場合は警告を出すだけ
       logger.warn('ServerManager', `Could not update server.properties at ${propsPath}: ${err}`);
+      this.emit('serverPropertiesUpdateFailed', { serverId: server.id, path: propsPath, error: String(err) });
     }
   }
 
@@ -633,6 +708,21 @@ export class ServerManager {
           targetHost: destIP,
           targetPort: parseInt(destPort),
           timeout: 30000
+        });
+
+        // Register connection activity handler to keep a lightweight recent-activity map
+        udpProxy.setConnectionActivityHandler((clientIP, clientPort /*, data */) => {
+          try {
+            const key = `${clientIP}:${clientPort}`;
+            let map = this.recentClientActivity.get(server.id);
+            if (!map) {
+              map = new Map();
+              this.recentClientActivity.set(server.id, map);
+            }
+            map.set(key, { client: key, lastActivity: new Date() });
+          } catch (e) {
+            // ignore
+          }
         });
 
         await udpProxy.start();
@@ -704,6 +794,8 @@ export class ServerManager {
       if (udpProxy) {
         try { await udpProxy.stop(); } catch (e) { console.warn(`⚠️ Failed to stop UDPProxy for ${server.name}:`, e); }
         this.udpProxies.delete(server.id);
+        // clear recent client activity cache
+        try { this.recentClientActivity.delete(server.id); } catch (e) { /* ignore */ }
       }
 
       // プロセスマネージャーでサーバープロセスを停止（存在しない場合は無視）
@@ -717,7 +809,7 @@ export class ServerManager {
         }
       }
 
-      // 最終的に状態を offline に更新
+      // 最終的に状態を offline に更新（成功時）
       server.status = "offline";
       server.playersOnline = 0;
       server.players = [];
@@ -727,11 +819,18 @@ export class ServerManager {
 
     } catch (error) {
       console.error(`❌ Failed to stop server ${server.name}:`, error);
-      // エラーでも状態は変更する
-      server.status = "error";
-      server.updatedAt = new Date();
-      this.servers.set(server.id, server);
-      await this.saveServersToStorage();
+      // エラーが発生しても停止処理の副作用を残さないため、可能な限り offline にする
+      try {
+        server.status = "offline";
+        server.playersOnline = 0;
+        server.players = [];
+        server.updatedAt = new Date();
+        this.servers.set(server.id, server);
+        await this.saveServersToStorage();
+      } catch (e) {
+        console.error(`❌ Failed to persist offline state for ${server.name}:`, e);
+      }
+      // rethrow original error so callers are aware
       throw error;
     }
   }
@@ -761,26 +860,7 @@ export class ServerManager {
     }
   }
 
-  // IP ブロック処理
-  private async blockIP(server: Server, targetIP?: string): Promise<void> {
-    if (!targetIP) {
-      throw new APIError("Target IP is required for block action", "MISSING_TARGET_IP", 400);
-    }
-
-    console.log(`🚫 Blocking IP ${targetIP} for server: ${server.name}`);
-    
-    // 実際のIP ブロック処理を実装
-    // ここでは、該当IPのプレイヤーを切断するシミュレーション
-    const playersToKick = (server.players || []).filter(player => 
-      player.ipAddress === targetIP
-    );
-
-    playersToKick.forEach(player => {
-      this.kickPlayer(server.id, player.id);
-    });
-
-    console.log(`✅ Blocked IP ${targetIP} and kicked ${playersToKick.length} players`);
-  }
+  
 
   // プレイヤー参加処理
   public addPlayer(serverId: string, playerName: string, ipAddress?: string): Player {

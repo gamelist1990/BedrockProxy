@@ -271,6 +271,13 @@ export class MessageRouter {
     this.serverManager.on("consoleOutput", (data: any) => {
       this.broadcastEvent("console.output", data);
     });
+    // server.properties update events
+    this.serverManager.on("serverPropertiesUpdated", (data: any) => {
+      this.broadcastEvent("server.properties.updated", data);
+    });
+    this.serverManager.on("serverPropertiesUpdateFailed", (data: any) => {
+      this.broadcastEvent("server.properties.updateFailed", data);
+    });
   }
 
   // イベントブロードキャスト（WebSocketServerに委譲）
