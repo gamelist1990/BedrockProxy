@@ -104,6 +104,7 @@ export const ja_JP = {
   "server.addNew": "新規サーバーを追加",
   "server.delete": "サーバーを削除",
   "server.deleteFlow": "サーバー削除フローを開始します",
+  "server.deleteConfirmNote": "この操作を実行するとサーバーとその設定は完全に削除され、元に戻せません。",
   "server.registerFlow": "新しいサーバー登録フローを開始します",
   "server.startingQueue": "起動待ちキュー",
   "server.address": "アドレス",
@@ -166,6 +167,12 @@ export const ja_JP = {
   
   // コンソール関連
   "console.title": "コンソール出力",
+  "console.recentDebugHeader": "直近のコンソール出力（デバッグ用）",
+  "console.processExitedExit": "プロセスは終了しました（exit code: {code}） - {time}",
+  "console.processExitedSignal": "プロセスは終了しました（signal: {signal}） - {time}",
+  "console.waitingOutput": "コンソール出力を待機中...",
+  "console.serverOffline": "サーバーがオフラインです",
+  "console.useServerOnline": "コンソール機能を使用するにはサーバーをオンラインにしてください",
   "console.placeholder": "コマンドを入力して Enter で送信",
   
   // 新規サーバー追加

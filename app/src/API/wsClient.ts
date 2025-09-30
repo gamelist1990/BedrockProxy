@@ -17,6 +17,7 @@ export class WebSocketClient {
   private reconnectAttempts = 0;
   private reconnectTimer: number | null = null;
   private heartbeatTimer: number | null = null;
+  private manualDisconnect = false;
   private lastPingTime = 0;
   private latency = 0;
   private connectingPromise: Promise<void> | null = null;
@@ -87,6 +88,8 @@ export class WebSocketClient {
         };
 
         this.ws.onopen = () => {
+          // Connection established -> clear any manual-disconnect state
+          this.manualDisconnect = false;
           this.state = 'connected';
           this.reconnectAttempts = 0;
           this.emit('connected', { url: this.url });
@@ -148,6 +151,8 @@ export class WebSocketClient {
   }
 
   public disconnect(): void {
+    // Mark as manual so automatic reconnect loop won't start
+    this.manualDisconnect = true;
     this.stopHeartbeat();
     if (this.reconnectTimer) { clearTimeout(this.reconnectTimer); this.reconnectTimer = null; }
     this.connectingPromise = null;
@@ -186,6 +191,8 @@ export class WebSocketClient {
 
   private scheduleReconnect() {
     if (this.reconnectTimer) return;
+    // Do not schedule reconnect if disconnect() was called intentionally by client
+    if (this.manualDisconnect) return;
     this.reconnectAttempts++;
     const base = 1000 * Math.min(30, Math.pow(1.5, this.reconnectAttempts));
     const jitter = Math.random() * 500;

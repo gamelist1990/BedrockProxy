@@ -18,9 +18,7 @@
       ]
     },
     "shell:allow-kill",
-    "shell:deny-kill",
     "shell:allow-open",
-    "shell:deny-open",
     {
       "identifier": "shell:allow-spawn",
       "allow": [
@@ -30,7 +28,6 @@
         }
       ]
     },
-    "shell:allow-stdin-write",
-    "shell:deny-stdin-write"
+    "shell:allow-stdin-write"
   ]
 }

@@ -42,6 +42,7 @@ import AddIcon from "@mui/icons-material/Add";
 import { bedrockProxyAPI, type Server, type ServerStatus } from "./API";
 import { resourceDir } from '@tauri-apps/api/path';
 import { Command } from '@tauri-apps/plugin-shell';
+import { listen } from '@tauri-apps/api/event';
 import ServerDetails from "./ServerDetails";
 import "./css/App.css";
 import ServerAvatar from './components/ServerAvatar';
@@ -215,9 +216,12 @@ function ServerList() {
     }
   }, [t]);
 
-  // Ensure backend process we started is killed when app unloads
+  // Ensure backend process we started is only killed when the application is closing.
+  // Avoid killing on component unmount / HMR to keep the sidecar running while the app is active.
   useEffect(() => {
-    const handleUnload = async () => {
+    let unlisten: (() => void) | null = null;
+
+    const handleAppClose = async () => {
       try {
         const spawned = (window as any).__bp_spawned_backend;
         if (spawned && spawned.child) {
@@ -227,22 +231,40 @@ function ServerList() {
             /* ignore */
           }
         }
-      } catch (e) {}
+      } catch (e) {
+        /* ignore */
+      }
     };
-    window.addEventListener("beforeunload", handleUnload);
+
+    // Try to listen for Tauri's close-request event (fired when the user closes the app window).
+    // If Tauri APIs are not available (non-Tauri runtime), fall back to beforeunload as a best-effort.
+    (async () => {
+      try {
+        const l = await listen('tauri://close-request', async () => {
+          await handleAppClose();
+        });
+        unlisten = l;
+      } catch (e) {
+        // Fallback for non-Tauri environments
+        window.addEventListener('beforeunload', handleAppClose);
+      }
+    })();
+
     return () => {
-      window.removeEventListener("beforeunload", handleUnload);
-      // also try once more
-      (async () => {
-        const spawned = (window as any).__bp_spawned_backend;
-        if (spawned && spawned.child) {
-          try {
-            spawned.child.kill();
-          } catch (e) {
-            /* ignore */
-          }
+      // Remove listeners but do not kill the backend here; keep it running until a real app close happens.
+      if (unlisten) {
+        try {
+          unlisten();
+        } catch (e) {
+          /* ignore */
         }
-      })();
+      } else {
+        try {
+          window.removeEventListener('beforeunload', handleAppClose);
+        } catch (e) {
+          /* ignore */
+        }
+      }
     };
   }, []);
 
@@ -322,26 +344,50 @@ function ServerList() {
     };
 
     // Handle backend auto-start result (emitted by frontend logic when sidecar start attempted)
-    const handleAutoStartResult = (data: any) => {
+    const handleAutoStartResult = async (data: any) => {
       try {
+        console.debug('backend.autoStartResult', data);
         if (data?.success) {
-          setLiveLogs((prev) => [...prev, 'Backend auto-start succeeded, retrying connection...']);
-          // try a graceful reconnect first
-          (async () => {
-            try {
-              await bedrockProxyAPI.connect();
-              setLiveLogs((prev) => [...prev, 'Reconnected to backend after auto-start']);
-            } catch (e) {
-              // as a last resort, reload the page to re-init the frontend
-              console.warn('Reconnect after auto-start failed, reloading page', e);
-              window.location.reload();
-            }
-          })();
+          setLiveLogs((prev) => [...prev, 'Backend auto-start succeeded, refreshing connection and data...']);
         } else {
           setLiveLogs((prev) => [...prev, `Backend auto-start failed: ${data?.error ?? 'unknown'}`]);
         }
+
+        // Try to ensure connection and refresh data
+        try {
+          await bedrockProxyAPI.connect();
+        } catch (e) {
+          console.debug('connect after auto-start threw', e);
+        }
+
+        setIsLoading(true);
+        try {
+          const list = await bedrockProxyAPI.getServers();
+          setServers(list);
+          setIsConnected(bedrockProxyAPI.isConnected());
+        } catch (e) {
+          console.warn('getServers after auto-start failed, reloading page', e);
+          window.location.reload();
+        } finally {
+          setIsLoading(false);
+        }
       } catch (e) {
         console.error('Error handling backend.autoStartResult', e);
+      }
+    };
+
+    // Refresh servers when a connection is established
+    const onConnected = async () => {
+      try {
+        console.debug('connection.established -> refreshing servers');
+        setIsLoading(true);
+        const list = await bedrockProxyAPI.getServers();
+        setServers(list);
+        setIsConnected(true);
+      } catch (e) {
+        console.warn('getServers after connection established failed', e);
+      } finally {
+        setIsLoading(false);
       }
     };
 
@@ -394,8 +440,9 @@ function ServerList() {
     bedrockProxyAPI.onConnection("disconnected", () =>
       handleConnectionUpdate({ status: "disconnected" })
     );
-    bedrockProxyAPI.on("console.output", handleConsoleOutput);
-    bedrockProxyAPI.on('backend.autoStartResult', handleAutoStartResult as any);
+  bedrockProxyAPI.on("console.output", handleConsoleOutput);
+  bedrockProxyAPI.on('backend.autoStartResult', handleAutoStartResult as any);
+  bedrockProxyAPI.on('connection.established', onConnected as any);
 
     return () => {
       isMounted = false;
@@ -411,8 +458,9 @@ function ServerList() {
       );
       bedrockProxyAPI.offConnection("connected");
       bedrockProxyAPI.offConnection("disconnected");
-      bedrockProxyAPI.off("console.output", handleConsoleOutput);
+    bedrockProxyAPI.off("console.output", handleConsoleOutput);
   bedrockProxyAPI.off('backend.autoStartResult', handleAutoStartResult as any);
+  bedrockProxyAPI.off('connection.established', onConnected as any);
       // 接続は維持する（他のコンポーネントも使用する可能性があるため）
     };
   }, [connectAndLoadData, t]);
