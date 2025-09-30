@@ -55,6 +55,8 @@ export class BedrockProxyAPI {
     reject: (error: Error) => void;
     timeout: NodeJS.Timeout;
   }>();
+  // Whether we've already attempted auto-starting the backend in this session
+  private autoStartAttempted = false;
 
   constructor(_wsUrl: string = 'ws://localhost:8080') {
     // WebSocketConnectionManagerを初期化
@@ -78,8 +80,28 @@ export class BedrockProxyAPI {
       this.clearPendingRequests();
     });
 
-    this.connectionManager.on('reconnecting', (data: any) => {
+    this.connectionManager.on('reconnecting', async (data: any) => {
       console.log(`🔄 API Reconnecting... (attempt ${data.attempt}/${data.maxAttempts})`);
+      // If we've retried several times and haven't attempted auto-start yet, try spawning backend.exe
+      try {
+        const attemptThreshold = 1; // when to try auto-start (tweakable)
+        if (!this.autoStartAttempted && typeof data?.attempt === 'number' && data.attempt >= attemptThreshold) {
+          this.autoStartAttempted = true;
+          console.info('Attempting auto-start of backend.exe after repeated reconnect failures');
+          this.emitEvent('backend.autoStartAttempt', { attempt: data.attempt });
+          // Try auto-start (Tauri only; dynamic import)
+          try {
+            await this.tryAutoStartBackend();
+            this.emitEvent('backend.autoStartResult', { success: true });
+            console.info('Auto-start attempt finished (success or backend started)');
+          } catch (autoErr) {
+            this.emitEvent('backend.autoStartResult', { success: false, error: String(autoErr) });
+            console.error('Auto-start attempt failed:', autoErr);
+          }
+        }
+      } catch (e) {
+        console.error('Error during auto-start trigger:', e);
+      }
     });
 
     this.connectionManager.on('error', (data: any) => {
@@ -116,7 +138,7 @@ export class BedrockProxyAPI {
         const callback = this.requestCallbacks.get(message.id)!;
         clearTimeout(callback.timeout);
         this.requestCallbacks.delete(message.id);
-        
+
         if (message.data?.success !== false && !message.error) {
           callback.resolve(message.data);
         } else {
@@ -342,9 +364,9 @@ export class BedrockProxyAPI {
     executablePath?: string;
     serverDirectory?: string;
   }>): Promise<Server> {
-    const response = await this.sendRequest<{ server: Server }>('servers.addFromDetection', { 
-      detectedInfo, 
-      customConfig 
+    const response = await this.sendRequest<{ server: Server }>('servers.addFromDetection', {
+      detectedInfo,
+      customConfig
     });
     return {
       ...response.server,
@@ -372,13 +394,15 @@ export class BedrockProxyAPI {
     checkUpdates: boolean;
     logLevel: string;
   }> {
-    const response = await this.sendRequest<{ config: {
-      language: string;
-      theme: string;
-      autoStart: boolean;
-      checkUpdates: boolean;
-      logLevel: string;
-    } }>('config.get');
+    const response = await this.sendRequest<{
+      config: {
+        language: string;
+        theme: string;
+        autoStart: boolean;
+        checkUpdates: boolean;
+        logLevel: string;
+      }
+    }>('config.get');
     return response.config;
   }
 
@@ -456,12 +480,100 @@ export class BedrockProxyAPI {
   // クリーンアップ
   public destroy(): void {
     console.log('🧹 Destroying BedrockProxyAPI...');
-    
+
     this.clearPendingRequests();
     this.eventCallbacks.clear();
     this.connectionManager.destroy();
-    
+
     console.log('🧹 BedrockProxyAPI destroyed');
+  }
+
+  // Try to auto-start backend.exe using Tauri plugins (dynamic import to remain browser-safe)
+  private async tryAutoStartBackend(): Promise<void> {
+    try {
+      // dynamic import to avoid bundling in non-tauri env
+      const fsMod: any = await import('@tauri-apps/plugin-fs');
+      const { exists, BaseDirectory } = fsMod;
+
+      // Try exists but don't fail hard; log any error and continue to path-based fallbacks
+      try {
+        const found = await exists('backend.exe', { dir: BaseDirectory.Resource });
+        console.log('tryAutoStartBackend: fs.exists returned', found);
+      } catch (fsErr) {
+        console.warn('tryAutoStartBackend: fs.exists error (will fallback to path checks):', fsErr);
+      }
+
+      // Resolve candidate directories and try spawn with each absolute path
+      const pathApi: any = await import('@tauri-apps/api/path');
+      const candidates: string[] = [];
+
+      // resourceDir
+      try {
+        const resourceDir: string = await pathApi.resourceDir();
+        const exe = resourceDir.endsWith('/') || resourceDir.endsWith('\\') ? `${resourceDir}backend.exe` : `${resourceDir}${resourceDir.includes('/') ? '/' : '\\'}backend.exe`;
+        candidates.push(exe);
+        console.log('tryAutoStartBackend: candidate resourceDir ->', exe);
+      } catch (e) {
+        console.warn('tryAutoStartBackend: resourceDir() failed:', e);
+      }
+
+      // executableDir (where the running binary is located)
+      try {
+        if (typeof pathApi.executableDir === 'function') {
+          const execDir: string = await pathApi.executableDir();
+          const exe = execDir.endsWith('/') || execDir.endsWith('\\') ? `${execDir}backend.exe` : `${execDir}${execDir.includes('/') ? '/' : '\\'}backend.exe`;
+          candidates.push(exe);
+          console.log('tryAutoStartBackend: candidate executableDir ->', exe);
+        }
+      } catch (e) {
+        console.warn('tryAutoStartBackend: executableDir() failed:', e);
+      }
+
+      // appDir
+      try {
+        if (typeof pathApi.appDir === 'function') {
+          const appDir: string = await pathApi.appDir();
+          const exe = appDir.endsWith('/') || appDir.endsWith('\\') ? `${appDir}backend.exe` : `${appDir}${appDir.includes('/') ? '/' : '\\'}backend.exe`;
+          candidates.push(exe);
+          console.log('tryAutoStartBackend: candidate appDir ->', exe);
+        }
+      } catch (e) {
+        console.warn('tryAutoStartBackend: appDir() failed:', e);
+      }
+
+      // also try a relative path as last resort (may be forbidden)
+      candidates.push('backend.exe');
+      console.log('tryAutoStartBackend: candidate relative -> backend.exe');
+
+      const shell: any = await import('@tauri-apps/plugin-shell').catch(() => null);
+      const Command = shell ? (shell.Command || shell.Command) : null;
+      const spawnErrors: any[] = [];
+
+      for (const p of candidates) {
+        try {
+          if (!Command) {
+            throw new Error('plugin-shell not available');
+          }
+          console.log('tryAutoStartBackend: attempting spawn with path:', p);
+          const cmd = new Command(p, []);
+          const child = await cmd.spawn();
+          (window as any).__bp_spawned_backend = { cmd, child } as any;
+          console.log('tryAutoStartBackend: spawn awaited and succeeded for', p);
+          // give backend a moment to initialize
+          await new Promise((r) => setTimeout(r, 1200));
+          return;
+        } catch (spawnErr) {
+          console.warn('tryAutoStartBackend: spawn failed for', p, spawnErr);
+          spawnErrors.push({ path: p, error: String(spawnErr) });
+        }
+      }
+
+      // If we reach here, all spawn attempts failed
+      throw new Error(`All spawn attempts failed: ${JSON.stringify(spawnErrors)}`);
+    } catch (error) {
+      console.error('tryAutoStartBackend failed:', error);
+      throw error;
+    }
   }
 }
 
