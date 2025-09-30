@@ -8,6 +8,29 @@
     "dialog:allow-open",
     "fs:allow-exists",
     "fs:allow-resource-read",
-    "shell:allow-spawn"
+    {
+      "identifier": "shell:allow-execute",
+      "allow": [
+        {
+          "name": "binaries/backend",
+          "sidecar": true
+        }
+      ]
+    },
+    "shell:allow-kill",
+    "shell:deny-kill",
+    "shell:allow-open",
+    "shell:deny-open",
+    {
+      "identifier": "shell:allow-spawn",
+      "allow": [
+        {
+          "name": "binaries/backend",
+          "sidecar": true
+        }
+      ]
+    },
+    "shell:allow-stdin-write",
+    "shell:deny-stdin-write"
   ]
 }

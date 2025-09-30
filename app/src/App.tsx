@@ -41,6 +41,8 @@ import StopRoundedIcon from "@mui/icons-material/StopRounded";
 import SettingsRoundedIcon from "@mui/icons-material/SettingsRounded";
 import AddIcon from "@mui/icons-material/Add";
 import { bedrockProxyAPI, type Server, type ServerStatus } from "./API";
+import { resourceDir } from '@tauri-apps/api/path';
+import { Command } from '@tauri-apps/plugin-shell';
 import ServerDetails from "./ServerDetails";
 import "./css/App.css";
 
@@ -151,66 +153,37 @@ function ServerList() {
       } catch (err) {
         // If running inside Tauri, try to auto-start backend.exe if present
         try {
-          // dynamic import to avoid bundling errors in non-tauri env
-          const fsMod: any = await import("@tauri-apps/plugin-fs");
-          const { exists, BaseDirectory } = fsMod;
-          // check for backend.exe in resource directory
+          // Use direct imports (Tauri only).
           console.debug("Tauri: checking for backend.exe in resources");
           setLiveLogs((prev) => [
             ...prev,
             "Tauri: checking for backend.exe in resources",
           ]);
-          const found = await exists("backend.exe", {
-            dir: BaseDirectory.Resource,
-          });
-          console.debug("Tauri: backend.exe exists?", found);
+          const r = await resourceDir();
+          const exePath = r.endsWith("/") || r.endsWith("\\") ? `${r}backend.exe` : `${r}${'\\'}backend.exe`;
+          console.debug("Tauri: attempting to spawn backend.exe at", exePath);
           setLiveLogs((prev) => [
             ...prev,
-            `Tauri: backend.exe exists? ${found}`,
+            `Tauri: attempting to spawn backend.exe at ${exePath}`,
           ]);
-          if (found) {
-            // spawn backend.exe using Tauri Shell API
-            console.debug("Tauri: attempting to spawn backend.exe");
-            setLiveLogs((prev) => [
-              ...prev,
-              "Tauri: attempting to spawn backend.exe",
-            ]);
-            const pathApi: any = await import("@tauri-apps/api/path");
-            const resourceDir: string = await pathApi.resourceDir();
-            const exePath =
-              resourceDir.endsWith("/") || resourceDir.endsWith("\\")
-                ? `${resourceDir}backend.exe`
-                : `${resourceDir}${pathApi.sep || "\\"}backend.exe`;
-            const shell: any = await import("@tauri-apps/plugin-shell");
-            const Command = shell.Command || shell.Command;
-            const cmd = new Command(exePath, []);
-            const child = cmd.spawn();
-            console.debug("Tauri: spawn returned", child);
-            setLiveLogs((prev) => [
-              ...prev,
-              `Tauri: spawn returned ${
-                child ? JSON.stringify({ pid: child?.pid ?? null }) : "null"
-              }`,
-            ]);
-            (window as any).__bp_spawned_backend = { cmd, child } as any;
-            // give backend a moment to start
-            await new Promise((r) => setTimeout(r, 1000));
-            console.debug("Tauri: retrying WebSocket connect after spawn");
-            setLiveLogs((prev) => [
-              ...prev,
-              "Tauri: retrying WebSocket connect after spawn",
-            ]);
-            await bedrockProxyAPI.connect();
-            console.debug("Tauri: connect retry succeeded");
-            setLiveLogs((prev) => [...prev, "Tauri: connect retry succeeded"]);
-          } else {
-            console.debug("Tauri: backend.exe not found in resources");
-            setLiveLogs((prev) => [
-              ...prev,
-              "Tauri: backend.exe not found in resources",
-            ]);
-            throw err;
-          }
+          const cmd = Command.create(exePath, []);
+          const child = await cmd.spawn();
+          console.debug("Tauri: spawn returned", child);
+          setLiveLogs((prev) => [
+            ...prev,
+            `Tauri: spawn returned ${child ? JSON.stringify({ pid: child?.pid ?? null }) : 'null'}`,
+          ]);
+          (window as any).__bp_spawned_backend = { cmd, child } as any;
+          // give backend a moment to start
+          await new Promise((r) => setTimeout(r, 1000));
+          console.debug("Tauri: retrying WebSocket connect after spawn");
+          setLiveLogs((prev) => [
+            ...prev,
+            "Tauri: retrying WebSocket connect after spawn",
+          ]);
+          await bedrockProxyAPI.connect();
+          console.debug("Tauri: connect retry succeeded");
+          setLiveLogs((prev) => [...prev, "Tauri: connect retry succeeded"]);
         } catch (tauriErr) {
           console.error("Tauri auto-start failed:", tauriErr);
           const tauriMsg = (tauriErr as any)?.message ?? String(tauriErr);
