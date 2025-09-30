@@ -3,7 +3,6 @@ import { Routes, Route, useNavigate } from "react-router-dom";
 import {
   Alert,
   Snackbar,
-  Avatar,
   Box,
   Button,
   Card,
@@ -45,6 +44,7 @@ import { resourceDir } from '@tauri-apps/api/path';
 import { Command } from '@tauri-apps/plugin-shell';
 import ServerDetails from "./ServerDetails";
 import "./css/App.css";
+import ServerAvatar from './components/ServerAvatar';
 
 const fallbackEmojis = ["🪵", "🧱", "🧭", "🛡️", "⚙️", "🛠️", "🧊", "🔥"];
 
@@ -321,6 +321,30 @@ function ServerList() {
       });
     };
 
+    // Handle backend auto-start result (emitted by frontend logic when sidecar start attempted)
+    const handleAutoStartResult = (data: any) => {
+      try {
+        if (data?.success) {
+          setLiveLogs((prev) => [...prev, 'Backend auto-start succeeded, retrying connection...']);
+          // try a graceful reconnect first
+          (async () => {
+            try {
+              await bedrockProxyAPI.connect();
+              setLiveLogs((prev) => [...prev, 'Reconnected to backend after auto-start']);
+            } catch (e) {
+              // as a last resort, reload the page to re-init the frontend
+              console.warn('Reconnect after auto-start failed, reloading page', e);
+              window.location.reload();
+            }
+          })();
+        } else {
+          setLiveLogs((prev) => [...prev, `Backend auto-start failed: ${data?.error ?? 'unknown'}`]);
+        }
+      } catch (e) {
+        console.error('Error handling backend.autoStartResult', e);
+      }
+    };
+
     // Update server player counts in real-time when players join/leave
     const handlePlayerJoinedOverview = (data: any) => {
       try {
@@ -371,6 +395,7 @@ function ServerList() {
       handleConnectionUpdate({ status: "disconnected" })
     );
     bedrockProxyAPI.on("console.output", handleConsoleOutput);
+    bedrockProxyAPI.on('backend.autoStartResult', handleAutoStartResult as any);
 
     return () => {
       isMounted = false;
@@ -387,6 +412,7 @@ function ServerList() {
       bedrockProxyAPI.offConnection("connected");
       bedrockProxyAPI.offConnection("disconnected");
       bedrockProxyAPI.off("console.output", handleConsoleOutput);
+  bedrockProxyAPI.off('backend.autoStartResult', handleAutoStartResult as any);
       // 接続は維持する（他のコンポーネントも使用する可能性があるため）
     };
   }, [connectAndLoadData, t]);
@@ -760,17 +786,12 @@ function ServerList() {
                   <Card elevation={0} className="mui-card server-card">
                     <CardHeader
                       avatar={
-                        server.iconUrl ? (
-                          <Avatar
-                            src={server.iconUrl}
-                            alt={`${server.name} icon`}
-                            className="server-avatar"
-                          />
-                        ) : (
-                          <Avatar className="server-avatar">
-                            {pickEmoji(server.id)}
-                          </Avatar>
-                        )
+                        <ServerAvatar
+                          iconUrl={server.iconUrl}
+                          fallbackEmoji={pickEmoji(server.id)}
+                          alt={`${server.name} icon`}
+                          className="server-avatar"
+                        />
                       }
                       title={
                         <Stack spacing={0.5}>

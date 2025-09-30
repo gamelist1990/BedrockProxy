@@ -69,6 +69,10 @@ export class WebSocketClient {
   public async connect(): Promise<void> {
     if (this.isConnected()) return Promise.resolve();
     if (this.state === 'connecting' && this.connectingPromise) return this.connectingPromise;
+    // If this is a deliberate connect call (not an ongoing reconnect), reset attempts
+    if (this.state !== 'reconnecting') {
+      this.reconnectAttempts = 0;
+    }
 
     this.state = 'connecting';
     this.emit('connecting', {});
@@ -130,6 +134,12 @@ export class WebSocketClient {
 
       } catch (error) {
         this.connectingPromise = null;
+        // schedule reconnect so transient failures still trigger retry loop
+        try {
+          this.scheduleReconnect();
+        } catch (e) {
+          /* ignore schedule errors */
+        }
         reject(error);
       }
     });

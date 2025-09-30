@@ -13,7 +13,6 @@ import {
   Stack,
   Tooltip,
   Typography,
-  Avatar,
   List,
   ListItem,
   ListItemText,
@@ -37,6 +36,7 @@ import PlayArrowRoundedIcon from "@mui/icons-material/PlayArrowRounded";
 import StopRoundedIcon from "@mui/icons-material/StopRounded";
 import RestartAltRoundedIcon from "@mui/icons-material/RestartAltRounded";
 import { bedrockProxyAPI, type Server, type Player, type ServerStatus } from "./API";
+import ServerAvatar from './components/ServerAvatar';
 
 const fallbackEmojis = ["🪵", "🧱", "🧭", "🛡️", "⚙️", "🛠️", "🧊", "🔥"];
 
@@ -468,11 +468,12 @@ function ServerDetails() {
           <CardHeader
             className="details-card-header"
             avatar={
-              server.iconUrl ? (
-                <Avatar src={server.iconUrl} alt={`${server.name} icon`} className="server-avatar" />
-              ) : (
-                <Avatar className="server-avatar">{pickEmoji(server.id)}</Avatar>
-              )
+              <ServerAvatar
+                iconUrl={server.iconUrl}
+                fallbackEmoji={pickEmoji(server.id)}
+                alt={`${server.name} icon`}
+                className="server-avatar"
+              />
             }
             title={
               <Stack spacing={1} className="details-header">
