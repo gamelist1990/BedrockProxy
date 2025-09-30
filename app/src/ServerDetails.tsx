@@ -1,5 +1,5 @@
 import { useParams, useNavigate } from "react-router-dom";
-import { useState, useEffect, useCallback, type ReactNode } from "react";
+import { useState, useEffect, useCallback, useRef, type ReactNode } from "react";
 import "./css/ServerDetails.css";
 import {
   Box,
@@ -91,6 +91,7 @@ function ServerDetails() {
   const [showTagInput, setShowTagInput] = useState(false);
   const [consoleLines, setConsoleLines] = useState<string[]>([]);
   const [consoleInput, setConsoleInput] = useState("");
+  const [isSendingCommand, setIsSendingCommand] = useState(false);
   const [autoRestart, setAutoRestart] = useState(false);
   const [forwardAddress, setForwardAddress] = useState("");
   const [customForwardAddress, setCustomForwardAddress] = useState("");
@@ -139,71 +140,129 @@ function ServerDetails() {
     }
   }, [id, t]);
 
+  // console output container ref for auto-scroll
+  const consoleRef = useRef<HTMLDivElement | null>(null);
+
+  // 安定したイベントハンドラを useCallback で作成
+  const handleServerUpdated = useCallback((data: any) => {
+    if (data?.server?.id === id) {
+      setServer(data.server);
+    }
+  }, [id]);
+
+  const handleServerStatusChanged = useCallback((data: any) => {
+    if (data?.serverId === id) {
+      setServer(data.server);
+    }
+  }, [id]);
+
+  const handlePlayerJoined = useCallback((data: any) => {
+    // Accept multiple shapes: { serverId, player, currentPlayerCount } or { server: { id, players } }
+    const sid = data?.serverId ?? data?.server?.id ?? null;
+    if (sid === id) {
+      const player = data.player ?? data.playerData ?? (data.server && data.server.player) ?? null;
+      if (player) {
+        const normalized = {
+          ...player,
+          joinTime: player.joinTime ? new Date(player.joinTime) : new Date(),
+        } as Player;
+        setPlayers(prev => {
+          // avoid duplicates by id or name
+          if (prev.find(p => p.id === normalized.id || p.name === normalized.name)) return prev;
+          return [...prev, normalized];
+        });
+      }
+      // sync server playersOnline if provided
+      if (typeof data.currentPlayerCount === 'number' || data.server?.playersOnline) {
+        setServer(prev => prev ? { ...prev, playersOnline: data.currentPlayerCount ?? data.server.playersOnline } : prev);
+      }
+    }
+  }, [id]);
+
+  const handlePlayerLeft = useCallback((data: any) => {
+    const sid = data?.serverId ?? data?.server?.id ?? null;
+    if (sid === id) {
+      const playerId = data.playerId ?? data.player?.id ?? data.playerId ?? null;
+      if (playerId) {
+        setPlayers(prev => prev.filter(p => p.id !== playerId && p.name !== (data.player?.name ?? undefined)));
+      }
+      if (typeof data.currentPlayerCount === 'number' || data.server?.playersOnline) {
+        setServer(prev => prev ? { ...prev, playersOnline: data.currentPlayerCount ?? data.server.playersOnline } : prev);
+      }
+    }
+  }, [id]);
+
+  const handleConsoleOutput = useCallback((data: any) => {
+    // Support multiple payload shapes: { serverId, line }, { server: { id, ... }, line }, or { serverName }
+    const sid = data?.serverId ?? data?.server?.id ?? null;
+    const serverName = data?.serverName ?? data?.server?.name ?? null;
+
+    // If serverId available, match by id. Otherwise, if serverName matches current server, accept.
+    if (sid && sid !== id) return;
+    if (!sid && serverName && server && serverName !== server.name) return;
+
+    const rawLine = data?.line ?? data?.text ?? data?.message ?? '';
+    const line = String(rawLine);
+
+    setConsoleLines(prev => {
+      const newLines = [...prev, line];
+      if (newLines.length > 1000) newLines.shift();
+      return newLines;
+    });
+  }, [id, server?.name]);
+
   // 初期化とイベント処理
   useEffect(() => {
     let isMounted = true;
 
     const initializeData = async () => {
-      if (isMounted) {
-        await loadServerData();
-      }
+      if (isMounted) await loadServerData();
     };
 
     initializeData();
 
-    // イベントリスナーの設定
-    const handleServerUpdated = (data: any) => {
-      if (isMounted && data.server.id === id) {
-        setServer(data.server);
+    // Ensure we are subscribed to key events for this server specifically.
+    // This helps if global subscription didn't propagate or was missed.
+    (async () => {
+      try {
+        await bedrockProxyAPI.subscribe(['console.output', 'player.joined', 'player.left', 'server.statusChanged']);
+      } catch (e) {
+        console.warn('Failed to subscribe to server events in details view', e);
       }
-    };
+    })();
 
-    const handleServerStatusChanged = (data: any) => {
-      if (isMounted && data.serverId === id) {
-        setServer(data.server);
-      }
-    };
+    // 登録
+    bedrockProxyAPI.on('server.updated', handleServerUpdated);
+    bedrockProxyAPI.on('server.statusChanged', handleServerStatusChanged);
+    bedrockProxyAPI.on('player.joined', handlePlayerJoined);
+    bedrockProxyAPI.on('player.left', handlePlayerLeft);
+    bedrockProxyAPI.on('console.output', handleConsoleOutput);
 
-    const handlePlayerJoined = (data: any) => {
-      if (isMounted && data.serverId === id) {
-        setPlayers(prev => [...prev, data.player]);
-      }
-    };
-
-    const handlePlayerLeft = (data: any) => {
-      if (isMounted && data.serverId === id) {
-        setPlayers(prev => prev.filter(p => p.id !== data.playerId));
-      }
-    };
-
-      bedrockProxyAPI.on('server.updated', handleServerUpdated);
-      bedrockProxyAPI.on('server.statusChanged', handleServerStatusChanged);
-      bedrockProxyAPI.on('player.joined', handlePlayerJoined);
-      bedrockProxyAPI.on('player.left', handlePlayerLeft);
-
-      // リアルタイムコンソール出力の処理
-      const handleConsoleOutput = (data: any) => {
-        if (isMounted && data.serverId === id) {
-          setConsoleLines(prev => {
-            const newLines = [...prev, data.line];
-            // 最大1000行に制限
-            if (newLines.length > 1000) {
-              newLines.shift();
-            }
-            return newLines;
-          });
-        }
-      };
-
-      bedrockProxyAPI.on('console.output', handleConsoleOutput);    return () => {
+    return () => {
       isMounted = false;
       bedrockProxyAPI.off('server.updated', handleServerUpdated);
       bedrockProxyAPI.off('server.statusChanged', handleServerStatusChanged);
       bedrockProxyAPI.off('player.joined', handlePlayerJoined);
       bedrockProxyAPI.off('player.left', handlePlayerLeft);
-      bedrockProxyAPI.off('console.output');
+      bedrockProxyAPI.off('console.output', handleConsoleOutput);
+      // unsubscribe from the specific events for this view
+      try {
+        bedrockProxyAPI.unsubscribe(['console.output', 'player.joined', 'player.left', 'server.statusChanged']);
+      } catch (e) {
+        // ignore
+      }
     };
-  }, [id, loadServerData]);
+  }, [handleServerUpdated, handleServerStatusChanged, handlePlayerJoined, handlePlayerLeft, handleConsoleOutput, loadServerData]);
+
+  // 新しいコンソール行が追加されたら自動でスクロール
+  useEffect(() => {
+    const el = consoleRef.current;
+    if (!el) return;
+    // 少し遅延して最新行がレンダリングされるのを待つ
+    requestAnimationFrame(() => {
+      el.scrollTop = el.scrollHeight;
+    });
+  }, [consoleLines]);
 
   if (isLoading) {
     return (
@@ -236,7 +295,10 @@ function ServerDetails() {
   // サーバー操作
   const handleServerAction = async (action: 'start' | 'stop' | 'restart' | 'block') => {
     try {
-      await bedrockProxyAPI.performServerAction(server.id, action);
+      const updated = await bedrockProxyAPI.performServerAction(server.id, action);
+      if (updated) {
+        setServer(updated);
+      }
     } catch (error) {
       console.error('❌ Server action failed:', error);
     }
@@ -254,10 +316,14 @@ function ServerDetails() {
   // コンソールコマンド送信
   const handleConsoleCommand = async (command: string) => {
     try {
+      if (isSendingCommand) return;
+      setIsSendingCommand(true);
       await bedrockProxyAPI.sendConsoleCommand(server.id, command);
-      setConsoleLines(prev => [...prev, `> ${command}`]);
+      // Do NOT locally append `> ${command}` — backend broadcasts an immediate echo (console.output)
     } catch (error) {
       console.error('❌ Console command failed:', error);
+    } finally {
+      setIsSendingCommand(false);
     }
   };
 
@@ -650,6 +716,7 @@ function ServerDetails() {
 
                 <Box className="console-output-wrapper">
                   <div 
+                    ref={consoleRef}
                     className="console-output"
                     style={{
                       maxHeight: '400px',

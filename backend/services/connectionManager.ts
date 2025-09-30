@@ -208,7 +208,16 @@ export class ConnectionManager {
 
     for (const client of this.clients.values()) {
       // 購読チェック
+      try {
+        // INFO: 出力することで、どのクライアントがどのイベントを購読しているかを確認する
+        logger.info('broadcast.debug', `Client subscriptions for broadcast check`, { subscriptions: Array.from(client.subscriptions) }, client.id);
+      } catch (e) {
+        // noop
+      }
+
       if (!client.subscriptions.has(message.event) && !client.subscriptions.has("*")) {
+        // Log which client caused the skip for easier debugging
+        logger.info('broadcast', `Skipping client for event (not subscribed)`, { event: message.event, subscriptions: Array.from(client.subscriptions) }, client.id);
         skipped++;
         continue;
       }

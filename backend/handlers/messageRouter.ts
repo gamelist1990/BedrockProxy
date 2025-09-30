@@ -170,6 +170,22 @@ export class MessageRouter {
     }
 
     const server = await this.serverManager.performServerAction(data);
+
+    // Broadcast an immediate event so clients receive an OUT corresponding to the INPUT action.
+    try {
+      this.broadcastEvent('server.updated', { server });
+      this.broadcastEvent('server.action', { serverId: server.id, action: data.action, server });
+      // Also emit a console-like notification for UI feedback
+      this.broadcastEvent('console.output', {
+        serverId: server.id,
+        line: `[action] ${data.action} requested`,
+        timestamp: new Date(),
+        type: 'stdout'
+      });
+    } catch (e) {
+      console.warn('⚠️ Failed to broadcast immediate server action events:', e);
+    }
+
     return { server };
   }
 
@@ -355,11 +371,33 @@ export class MessageRouter {
     try {
       // プロセスマネージャー経由でコマンドを送信
       this.serverManager.sendConsoleCommand(data.id, data.command);
+      // Immediately broadcast an echo of the command so the client sees an OUT for their INPUT
+      try {
+        this.broadcastEvent('console.output', {
+          serverId: data.id,
+          line: `> ${data.command}`,
+          timestamp: new Date(),
+          type: 'stdin'
+        });
+      } catch (e) {
+        console.warn('Failed to broadcast console command echo:', e);
+      }
       return { success: true };
     } catch (err: any) {
       // プロセスが実行されていない場合はユーザ向けメッセージを返す
       if (err && (err.code === 'PROCESS_NOT_RUNNING' || err.code === 'PROCESS_NOT_FOUND')) {
         console.warn(`Console command failed - no process for ${data.id}`);
+        // Still broadcast a message indicating command could not be delivered
+        try {
+          this.broadcastEvent('console.output', {
+            serverId: data.id,
+            line: `> ${data.command} (failed: no running process)`,
+            timestamp: new Date(),
+            type: 'stderr'
+          });
+        } catch (e) {
+          // noop
+        }
         return { success: false, message: 'No running server process to receive commands' };
       }
       throw err;

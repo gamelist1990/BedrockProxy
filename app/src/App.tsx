@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect, useCallback } from "react";
+﻿import { useMemo, useState, useEffect, useCallback } from "react";
 import { Routes, Route, useNavigate } from "react-router-dom";
 import {
   Alert,
@@ -65,6 +65,9 @@ function ServerList() {
   const [actionMessage, setActionMessage] = useState<string | null>(null);
   const [isConnected, setIsConnected] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [connectionState, setConnectionState] = useState<string | null>(null);
+  const [latency, setLatency] = useState<number | null>(null);
+  const [liveLogs, setLiveLogs] = useState<string[]>([]);
   
   // 新規サーバー追加ダイアログ関連
   const [addServerDialog, setAddServerDialog] = useState(false);
@@ -112,6 +115,12 @@ function ServerList() {
 
   // WebSocket接続とデータ読み込み
   const connectAndLoadData = useCallback(async () => {
+    // prevent concurrent connect attempts
+    if ((window as any).__bedrock_connecting) {
+      console.log('🔄 Connection already in progress (guard)');
+      return;
+    }
+    (window as any).__bedrock_connecting = true;
     try {
       setIsLoading(true);
       
@@ -141,6 +150,7 @@ function ServerList() {
       setIsConnected(false);
     } finally {
       setIsLoading(false);
+      (window as any).__bedrock_connecting = false;
     }
   }, [t]);
 
@@ -157,53 +167,67 @@ function ServerList() {
     initializeConnection();
 
     // イベントリスナーの設定
+    // 安定したイベントハンドラ
     const handleServerCreated = (data: any) => {
-      if (isMounted) {
-        setServers(prev => [...prev, data.server]);
-        setActionMessage(`${data.server.name} ${t('server.actionCreated')}`);
-      }
+      setServers(prev => [...prev, data.server]);
+      setActionMessage(`${data.server.name} ${t('server.actionCreated')}`);
     };
 
     const handleServerUpdated = (data: any) => {
-      if (isMounted) {
-        setServers(prev => prev.map(server => 
-          server.id === data.server.id ? data.server : server
-        ));
-      }
+      setServers(prev => prev.map(server => 
+        server.id === data.server.id ? data.server : server
+      ));
     };
 
     const handleServerDeleted = (data: any) => {
-      if (isMounted) {
-        setServers(prev => prev.filter(server => server.id !== data.serverId));
-        setActionMessage(`${data.serverName} ${t('server.actionDeleted')}`);
-      }
+      setServers(prev => prev.filter(server => server.id !== data.serverId));
+      setActionMessage(`${data.serverName} ${t('server.actionDeleted')}`);
     };
 
     const handleServerStatusChanged = (data: any) => {
-      if (isMounted) {
-        setServers(prev => prev.map(server => 
-          server.id === data.serverId ? data.server : server
-        ));
-        // statusLabelは動的に取得してstateの変更を避ける
-        const getStatusText = (status: ServerStatus) => {
-          const labels: Record<ServerStatus, string> = {
-            online: t("server.status.online"),
-            offline: t("server.status.offline"),
-            starting: t("server.status.starting"),
-            stopping: t("server.status.stopping"),
-            error: t("server.status.error"),
-          };
-          return labels[status] || status;
+      setServers(prev => prev.map(server => 
+        server.id === data.serverId ? data.server : server
+      ));
+      const getStatusText = (status: ServerStatus) => {
+        const labels: Record<ServerStatus, string> = {
+          online: t("server.status.online"),
+          offline: t("server.status.offline"),
+          starting: t("server.status.starting"),
+          stopping: t("server.status.stopping"),
+          error: t("server.status.error"),
         };
-        const statusText = getStatusText(data.newStatus as ServerStatus);
-        setActionMessage(`${data.server.name} ${statusText}`);
-      }
+        return labels[status] || status;
+      };
+      const statusText = getStatusText(data.newStatus as ServerStatus);
+      setActionMessage(`${data.server.name} ${statusText}`);
+    };
+
+    // connection events
+    const handleConnectionLatency = (d: any) => {
+      setLatency(d.latency ?? null);
+    };
+
+    const handleConnectionUpdate = (d: any) => {
+      setConnectionState((d && (d.status || d)) ?? null);
+    };
+
+    // live console log (for overview)
+    const handleConsoleOutput = (data: any) => {
+      setLiveLogs(prev => {
+        const lines = [...prev, `${data.serverName ?? data.serverId}: ${data.line}`];
+        if (lines.length > 200) lines.shift();
+        return lines;
+      });
     };
 
     bedrockProxyAPI.on('server.created', handleServerCreated);
     bedrockProxyAPI.on('server.updated', handleServerUpdated);
     bedrockProxyAPI.on('server.deleted', handleServerDeleted);
     bedrockProxyAPI.on('server.statusChanged', handleServerStatusChanged);
+    bedrockProxyAPI.onConnection('latencyUpdate', handleConnectionLatency as any);
+    bedrockProxyAPI.onConnection('connected', () => handleConnectionUpdate({ status: 'connected' }));
+    bedrockProxyAPI.onConnection('disconnected', () => handleConnectionUpdate({ status: 'disconnected' }));
+    bedrockProxyAPI.on('console.output', handleConsoleOutput);
 
     return () => {
       isMounted = false;
@@ -211,6 +235,10 @@ function ServerList() {
       bedrockProxyAPI.off('server.updated', handleServerUpdated);
       bedrockProxyAPI.off('server.deleted', handleServerDeleted);
       bedrockProxyAPI.off('server.statusChanged', handleServerStatusChanged);
+      bedrockProxyAPI.offConnection('latencyUpdate', handleConnectionLatency as any);
+      bedrockProxyAPI.offConnection('connected');
+      bedrockProxyAPI.offConnection('disconnected');
+      bedrockProxyAPI.off('console.output', handleConsoleOutput);
       // 接続は維持する（他のコンポーネントも使用する可能性があるため）
     };
   }, [connectAndLoadData, t]);
@@ -243,7 +271,13 @@ function ServerList() {
     
     try {
       setActionMessage(`${server.name} ${actionMessages[action]}`);
-      await bedrockProxyAPI.performServerAction(server.id, action);
+      const updated = await bedrockProxyAPI.performServerAction(server.id, action);
+      // Immediately reflect the updated server object in the list so UI updates even
+      // if the backend event is delayed or missing.
+      if (updated) {
+        setServers(prev => prev.map(s => s.id === updated.id ? updated : s));
+        setActionMessage(`${updated.name} ${actionMessages[action]}`);
+      }
     } catch (error) {
       console.error('❌ Server action failed:', error);
       setActionMessage(t('server.actionFailed'));
@@ -371,6 +405,11 @@ function ServerList() {
 
   return (
     <Box component="main" className="app-root">
+      {/* connection indicator */}
+      <Stack direction="row" spacing={2} sx={{ position: 'fixed', top: 12, right: 16, zIndex: 1300 }}>
+        <Chip label={connectionState ?? (isConnected ? 'connected' : 'disconnected')} color={isConnected ? 'success' : 'default'} size="small" />
+        <Chip label={latency !== null ? `${latency} ms` : '—'} size="small" />
+      </Stack>
       <Stack spacing={6} className="content-wrapper">
         <Stack spacing={3} className="hero-section">
           <Stack direction="row" alignItems="center" justifyContent="space-between">
@@ -627,6 +666,21 @@ function ServerList() {
             {actionMessage}
           </Alert>
         </Snackbar>
+
+        {/* live logs small drawer */}
+        <Box sx={{ position: 'fixed', bottom: 12, right: 16, width: 320, zIndex: 1300 }}>
+          {liveLogs.length > 0 && (
+            <Card elevation={6} sx={{ maxHeight: 220, overflow: 'auto' }}>
+              <CardHeader title={`Live (${liveLogs.length})`} sx={{ p: 1 }} />
+              <Divider />
+              <CardContent sx={{ p: 1 }}>
+                {liveLogs.slice(-8).map((ln, i) => (
+                  <Typography key={i} variant="caption" sx={{ display: 'block' }}>{ln}</Typography>
+                ))}
+              </CardContent>
+            </Card>
+          )}
+        </Box>
 
         {/* Add Server Dialog */}
         <Dialog

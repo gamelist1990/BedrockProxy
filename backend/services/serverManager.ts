@@ -586,11 +586,13 @@ export class ServerManager {
     } catch (error) {
       console.error(`❌ Failed to start server ${server.name}:`, error);
       
-      // エラー時はクリーンアップ
-      const minecraftServer = this.minecraftServers.get(server.id);
-      if (minecraftServer) {
-        await minecraftServer.stop();
-        this.minecraftServers.delete(server.id);
+      // エラー時はクリーンアップ（minecraftServers が存在する場合のみ）
+      if ((this as any).minecraftServers && typeof (this as any).minecraftServers.get === 'function') {
+        const minecraftServer = (this as any).minecraftServers.get(server.id);
+        if (minecraftServer) {
+          await minecraftServer.stop();
+          (this as any).minecraftServers.delete(server.id);
+        }
       }
       
       const udpProxy = this.udpProxies.get(server.id);

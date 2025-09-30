@@ -1,6 +1,4 @@
-// 統一されたロギングシステム
-
-export enum LogLevel {
+﻿export enum LogLevel {
   ERROR = 0,
   WARN = 1,
   INFO = 2,
@@ -18,12 +16,15 @@ export interface LogEntry {
   requestId?: string;
 }
 
+export type LogBroadcaster = (entry: LogEntry) => void;
+
 export class Logger {
   private static instance: Logger;
   private logLevel: LogLevel = LogLevel.INFO;
   private logs: LogEntry[] = [];
   private maxLogs: number = 1000;
   private categories = new Set<string>();
+  private broadcaster?: LogBroadcaster;
 
   private constructor() {}
 
@@ -43,6 +44,10 @@ export class Logger {
     return this.logLevel;
   }
 
+  public setBroadcaster(b?: LogBroadcaster) {
+    this.broadcaster = b;
+  }
+
   private shouldLog(level: LogLevel): boolean {
     return level <= this.logLevel;
   }
@@ -50,38 +55,46 @@ export class Logger {
   private addLog(entry: LogEntry): void {
     this.logs.push(entry);
     this.categories.add(entry.category);
-    
-    // ログ数制限
+
     if (this.logs.length > this.maxLogs) {
       this.logs = this.logs.slice(-this.maxLogs);
+    }
+
+    // ブロードキャスターがあれば送信（例外は握りつぶす）
+    if (this.broadcaster) {
+      try {
+        this.broadcaster(entry);
+      } catch (e) {
+        // ignore
+      }
     }
   }
 
   private formatMessage(category: string, message: string, data?: any, clientId?: string, requestId?: string): string {
     let formatted = `[${category.toUpperCase()}]`;
-    
+
     if (clientId) {
       formatted += ` [${clientId}]`;
     }
-    
+
     if (requestId) {
       formatted += ` [${requestId}]`;
     }
-    
+
     formatted += ` ${message}`;
-    
+
     if (data && typeof data === 'object') {
-      formatted += ` ${JSON.stringify(data)}`;
+      try { formatted += ` ${JSON.stringify(data)}`; } catch { formatted += ` ${String(data)}`; }
     } else if (data !== undefined) {
       formatted += ` ${data}`;
     }
-    
+
     return formatted;
   }
 
   public error(category: string, message: string, data?: any, clientId?: string, requestId?: string): void {
     if (!this.shouldLog(LogLevel.ERROR)) return;
-    
+
     const entry: LogEntry = {
       timestamp: new Date(),
       level: LogLevel.ERROR,
@@ -91,14 +104,14 @@ export class Logger {
       clientId,
       requestId
     };
-    
+
     this.addLog(entry);
-    console.error(`❌ ${this.formatMessage(category, message, data, clientId, requestId)}`);
+    console.error(this.formatMessage(category, message, data, clientId, requestId));
   }
 
   public warn(category: string, message: string, data?: any, clientId?: string, requestId?: string): void {
     if (!this.shouldLog(LogLevel.WARN)) return;
-    
+
     const entry: LogEntry = {
       timestamp: new Date(),
       level: LogLevel.WARN,
@@ -108,14 +121,14 @@ export class Logger {
       clientId,
       requestId
     };
-    
+
     this.addLog(entry);
-    console.warn(`⚠️  ${this.formatMessage(category, message, data, clientId, requestId)}`);
+    console.warn(this.formatMessage(category, message, data, clientId, requestId));
   }
 
   public info(category: string, message: string, data?: any, clientId?: string, requestId?: string): void {
     if (!this.shouldLog(LogLevel.INFO)) return;
-    
+
     const entry: LogEntry = {
       timestamp: new Date(),
       level: LogLevel.INFO,
@@ -125,14 +138,14 @@ export class Logger {
       clientId,
       requestId
     };
-    
+
     this.addLog(entry);
-    console.log(`ℹ️  ${this.formatMessage(category, message, data, clientId, requestId)}`);
+    console.log(this.formatMessage(category, message, data, clientId, requestId));
   }
 
   public debug(category: string, message: string, data?: any, clientId?: string, requestId?: string): void {
     if (!this.shouldLog(LogLevel.DEBUG)) return;
-    
+
     const entry: LogEntry = {
       timestamp: new Date(),
       level: LogLevel.DEBUG,
@@ -142,14 +155,14 @@ export class Logger {
       clientId,
       requestId
     };
-    
+
     this.addLog(entry);
-    console.debug(`🐛 ${this.formatMessage(category, message, data, clientId, requestId)}`);
+    console.debug(this.formatMessage(category, message, data, clientId, requestId));
   }
 
   public trace(category: string, message: string, data?: any, clientId?: string, requestId?: string): void {
     if (!this.shouldLog(LogLevel.TRACE)) return;
-    
+
     const entry: LogEntry = {
       timestamp: new Date(),
       level: LogLevel.TRACE,
@@ -159,12 +172,12 @@ export class Logger {
       clientId,
       requestId
     };
-    
+
     this.addLog(entry);
-    console.trace(`🔍 ${this.formatMessage(category, message, data, clientId, requestId)}`);
+    // console.trace may include stack; use debug
+    console.debug(this.formatMessage(category, message, data, clientId, requestId));
   }
 
-  // WebSocket専用のログメソッド
   public connection(action: string, clientId: string, data?: any): void {
     switch (action) {
       case 'connected':
@@ -222,7 +235,6 @@ export class Logger {
     }
   }
 
-  // ログ取得
   public getLogs(options?: {
     level?: LogLevel;
     category?: string;
@@ -255,7 +267,6 @@ export class Logger {
     return filtered;
   }
 
-  // 統計情報
   public getStats() {
     const levelCounts = Object.values(LogLevel)
       .filter(v => typeof v === 'number')
@@ -273,14 +284,12 @@ export class Logger {
     };
   }
 
-  // ログクリア
   public clearLogs(): void {
     this.logs = [];
     this.categories.clear();
     this.info('logger', 'Logs cleared');
   }
 
-  // ログエクスポート
   public exportLogs(): string {
     return JSON.stringify({
       exported: new Date().toISOString(),
@@ -291,5 +300,4 @@ export class Logger {
   }
 }
 
-// シングルトンインスタンス
 export const logger = Logger.getInstance();

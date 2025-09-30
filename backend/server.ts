@@ -88,6 +88,29 @@ export class WebSocketServer {
       });
     }
 
+    // Debug broadcast endpoint (POST) - used only for local testing
+    if (url.pathname === "/debug/broadcast" && request.method === "POST") {
+      try {
+        const body = await request.text();
+        const payload = body ? JSON.parse(body) : {};
+        const event = payload.event || payload.type || "console.output";
+        const data = payload.data || payload || { message: payload.message || "test" };
+
+        // Broadcast to subscribers
+        this.broadcast({
+          type: "event",
+          event,
+          data,
+          timestamp: Date.now(),
+        });
+
+        return new Response(JSON.stringify({ ok: true, event, data }), { status: 200, headers: { "Content-Type": "application/json" } });
+      } catch (err) {
+        console.error('Failed to handle debug broadcast:', err);
+        return new Response(JSON.stringify({ ok: false, error: String(err) }), { status: 500, headers: { "Content-Type": "application/json" } });
+      }
+    }
+
     // CORS対応
     if (request.method === "OPTIONS") {
       return new Response(null, {
@@ -150,17 +173,24 @@ export class WebSocketServer {
 
       // 購読処理
       if (data.type === "subscribe") {
-        const events = Array.isArray(data.events) ? data.events : [data.data || "*"];
-        const stringEvents = events.filter((e: any) => typeof e === 'string') as string[];
-        const uniqueEvents = [...new Set(stringEvents)]; // 重複を除去
+        // Accept multiple shapes: { events: [...] } or { data: { events: [...] } } or a single string
+        const raw = data.events ?? data.data?.events ?? data.data ?? "*";
+        const eventsArray = Array.isArray(raw) ? raw : [raw];
+        const stringEvents = eventsArray.flatMap((e: any) => {
+          if (typeof e === 'string') return [e];
+          // if the client accidentally sent { events: [{ events: [...] }] }
+          if (e && typeof e === 'object' && Array.isArray(e.events)) return e.events.filter((s: any) => typeof s === 'string');
+          return [];
+        });
+        const uniqueEvents = [...new Set(stringEvents)]; // remove duplicates
         const subscribedEvents: string[] = [];
-        
+
         uniqueEvents.forEach((event: string) => {
           if (this.connectionManager.subscribeClient(clientId, event)) {
             subscribedEvents.push(event);
           }
         });
-        
+
         this.connectionManager.sendMessage(clientId, {
           type: "response",
           id: data.id,
@@ -171,16 +201,22 @@ export class WebSocketServer {
       }
 
       if (data.type === "unsubscribe") {
-        const events = Array.isArray(data.events) ? data.events : [data.data || "*"];
-        const stringEvents = events.filter((e: any) => typeof e === 'string') as string[];
+        const raw = data.events ?? data.data?.events ?? data.data ?? [];
+        const eventsArray = Array.isArray(raw) ? raw : [raw];
+        const stringEvents = eventsArray.flatMap((e: any) => {
+          if (typeof e === 'string') return [e];
+          if (e && typeof e === 'object' && Array.isArray(e.events)) return e.events.filter((s: any) => typeof s === 'string');
+          return [];
+        });
+
         const unsubscribedEvents: string[] = [];
-        
+
         stringEvents.forEach((event: string) => {
           if (this.connectionManager.unsubscribeClient(clientId, event)) {
             unsubscribedEvents.push(event);
           }
         });
-        
+
         this.connectionManager.sendMessage(clientId, {
           type: "response",
           id: data.id,

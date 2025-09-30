@@ -1,6 +1,7 @@
 // フロントエンド向けのWebSocket APIクライアント（改良版）
 
-import { WebSocketConnectionManager, type ConnectionEventType } from './connectionManager.js';
+import { wsClient, type WSMessage } from './wsClient.js';
+import type { ConnectionEventType } from './connectionManager.js';
 
 export type ServerStatus = "online" | "offline" | "starting" | "stopping" | "error";
 
@@ -45,7 +46,7 @@ export interface WebSocketMessage<T = any> {
 export type EventCallback<T = any> = (data: T) => void;
 
 export class BedrockProxyAPI {
-  private connectionManager: WebSocketConnectionManager;
+  private connectionManager = wsClient;
   private eventCallbacks = new Map<string, EventCallback[]>();
   private requestCallbacks = new Map<string, {
     resolve: (data: any) => void;
@@ -53,28 +54,9 @@ export class BedrockProxyAPI {
     timeout: NodeJS.Timeout;
   }>();
 
-  constructor(wsUrl: string = 'ws://localhost:8080') {
+  constructor(_wsUrl: string = 'ws://localhost:8080') {
     // WebSocketConnectionManagerを初期化
-    this.connectionManager = new WebSocketConnectionManager({
-      url: wsUrl,
-      reconnect: {
-        enabled: true,
-        maxAttempts: 10,
-        initialDelay: 1000,
-        maxDelay: 30000,
-        backoffMultiplier: 1.5,
-        jitter: true
-      },
-      heartbeat: {
-        enabled: true,
-        interval: 30000,
-        timeout: 10000,
-        maxMissedBeats: 3
-      },
-      connectionTimeout: 10000,
-      messageTimeout: 30000
-    });
-
+    // wsClient is a singleton that will manage connection details
     this.setupConnectionEventHandlers();
   }
 
@@ -88,27 +70,27 @@ export class BedrockProxyAPI {
       });
     });
 
-    this.connectionManager.on('disconnected', (data) => {
+    this.connectionManager.on('disconnected', (data: any) => {
       console.log('📡 API Disconnected from backend:', data);
       // 保留中のリクエストをクリア
       this.clearPendingRequests();
     });
 
-    this.connectionManager.on('reconnecting', (data) => {
+    this.connectionManager.on('reconnecting', (data: any) => {
       console.log(`🔄 API Reconnecting... (attempt ${data.attempt}/${data.maxAttempts})`);
     });
 
-    this.connectionManager.on('error', (data) => {
+    this.connectionManager.on('error', (data: any) => {
       console.error('❌ API Connection error:', data);
       // エラーイベントを転送
       this.emitEvent('connection.error', data);
     });
-
-    this.connectionManager.on('message', (message) => {
-      this.handleMessage(message);
+    // wsClient emits a generic 'message' with parsed JSON
+    this.connectionManager.on('message', (message: WSMessage) => {
+      this.handleMessage(message as WebSocketMessage);
     });
 
-    this.connectionManager.on('latencyUpdate', (data) => {
+    this.connectionManager.on('latencyUpdate', (data: any) => {
       this.emitEvent('connection.latency', { latency: data.latency });
     });
   }
