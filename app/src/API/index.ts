@@ -10,6 +10,7 @@ export interface Player {
   name: string;
   joinTime: Date;
   ipAddress?: string;
+  port?: number;
 }
 
 export interface Server {

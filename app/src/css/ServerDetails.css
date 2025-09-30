@@ -373,9 +373,11 @@
   border: 1px solid rgba(148,163,184,0.08);
 }
 
-/* hide scrollbar but keep scroll functionality */
-.console-output-wrapper::-webkit-scrollbar { display: none; }
+/* hide scrollbar but keep scroll functionality across browsers */
+.console-output-wrapper::-webkit-scrollbar { width: 0; height: 0; }
 .console-output-wrapper { -ms-overflow-style: none; scrollbar-width: none; }
+.console-output-wrapper { overflow: auto; }
+.console-output-wrapper::-webkit-scrollbar-thumb { background: transparent; }
 
 .console-output {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, "Roboto Mono", "Segoe UI Mono", monospace;

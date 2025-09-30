@@ -85,13 +85,14 @@ export class ServerManager {
         name: player.name,
         xuid: player.xuid,
         joinTime: player.timestamp ? new Date(player.timestamp) : new Date(),
-        ipAddress: player.ipAddress
+        ipAddress: player.ipAddress,
+        port: (player as any).port
       };
 
       // Log inference detail for debugging
       try {
         if (player.ipAddress) {
-          logger.info('ServerManager', `Inferred IP for join: ${player.name}`, { serverId, playerName: player.name, ipAddress: player.ipAddress, xuid: player.xuid, timestamp: new Date().toISOString() });
+          logger.info('ServerManager', `Inferred IP for join: ${player.name}`, { serverId, playerName: player.name, ipAddress: player.ipAddress, port: (player as any).port, xuid: player.xuid, timestamp: new Date().toISOString() });
         } else {
           logger.info('ServerManager', `No IP inferred at join for: ${player.name}`, { serverId, playerName: player.name, xuid: player.xuid, timestamp: new Date().toISOString() });
         }
@@ -111,7 +112,7 @@ export class ServerManager {
         currentPlayerCount: server.playersOnline
       });
       
-      logger.info('ServerManager', `Player joined: ${player.name}`, { serverId, playerName: player.name, xuid: player.xuid, ipAddress: player.ipAddress });
+      logger.info('ServerManager', `Player joined: ${player.name}`, { serverId, playerName: player.name, xuid: player.xuid, ipAddress: player.ipAddress, port: (player as any).port });
     }
   }
   
@@ -518,16 +519,31 @@ export class ServerManager {
         const connectMatch = rawLine.match(/Player connected: (.+), xuid: (\d+)/);
         if (connectMatch) {
           const [, playerName, xuid] = connectMatch;
-          // Try to infer client IP from recent UDP activity for this server using the log timestamp
-          const ipAddress = this.findRecentClientIP(data.serverId, 10000, data.timestamp ? new Date(data.timestamp) : undefined);
-          this.handlePlayerJoined(data.serverId, { name: playerName, xuid, action: 'join', timestamp: data.timestamp, ipAddress } as PlayerPacket);
+          // Determine reference time: prefer data.timestamp but fallback to now if it seems skewed
+          let refTime: Date | undefined = data.timestamp ? new Date(data.timestamp) : undefined;
+          if (refTime) {
+            const skew = Math.abs(Date.now() - refTime.getTime());
+            if (skew > 2 * 60 * 1000) { // >2 minutes skew
+              try { logger.warn('ServerManager', 'Console timestamp skew detected, falling back to now', { serverId: data.serverId, providedTimestamp: refTime.toISOString(), skewMs: skew }); } catch (e) {}
+              refTime = new Date();
+            }
+          }
+          const conn = this.findRecentClientConnection(data.serverId, 10000, refTime);
+          this.handlePlayerJoined(data.serverId, { name: playerName, xuid, action: 'join', timestamp: data.timestamp, ipAddress: conn?.ip, port: conn?.port } as PlayerPacket);
         }
         const disconnectMatch = rawLine.match(/Player disconnected: (.+), xuid: (\d+),/);
         if (disconnectMatch) {
           const [, playerName, xuid] = disconnectMatch;
-          // Try to infer client IP for symmetry (best-effort) using the log timestamp
-          const ipAddress = this.findRecentClientIP(data.serverId, 10000, data.timestamp ? new Date(data.timestamp) : undefined);
-          this.handlePlayerLeft(data.serverId, { name: playerName, xuid, action: 'leave', timestamp: data.timestamp, ipAddress } as PlayerPacket);
+          let refTimeL: Date | undefined = data.timestamp ? new Date(data.timestamp) : undefined;
+          if (refTimeL) {
+            const skew = Math.abs(Date.now() - refTimeL.getTime());
+            if (skew > 2 * 60 * 1000) {
+              try { logger.warn('ServerManager', 'Console timestamp skew detected (leave), falling back to now', { serverId: data.serverId, providedTimestamp: refTimeL.toISOString(), skewMs: skew }); } catch (e) {}
+              refTimeL = new Date();
+            }
+          }
+          const connL = this.findRecentClientConnection(data.serverId, 10000, refTimeL);
+          this.handlePlayerLeft(data.serverId, { name: playerName, xuid, action: 'leave', timestamp: data.timestamp, ipAddress: connL?.ip, port: connL?.port } as PlayerPacket);
         }
       } catch (e) {
         // ignore
@@ -548,23 +564,35 @@ export class ServerManager {
   }
 
   // UDPProxy の統計を参照して、最近アクティブだったクライアントの IP を返す（ベストエフォート）
-  private findRecentClientIP(serverId: string, maxAgeMs: number = 10000, referenceTime?: Date): string | undefined {
+  private findRecentClientConnection(serverId: string, maxAgeMs: number = 10000, referenceTime?: Date): { ip: string; port?: number } | undefined {
     try {
       const refMs = referenceTime ? referenceTime.getTime() : Date.now();
 
       // First, check the in-memory recentClientActivity map populated by UDPProxy handlers
       const activityMap = this.recentClientActivity.get(serverId);
+      let bestFromMap: { client: string; lastActivity: Date; delta: number } | null = null;
       if (activityMap && activityMap.size > 0) {
-        // Choose the client whose lastActivity is closest to the reference time (absolute difference),
-        // but within the maxAgeMs window.
-        const candidates = Array.from(activityMap.values())
-          .map(c => ({ client: c.client, lastActivity: c.lastActivity, delta: Math.abs(refMs - c.lastActivity.getTime()) }))
-          .filter(c => c.delta <= maxAgeMs)
-          .sort((a, b) => a.delta - b.delta);
-        if (candidates.length > 0) {
-          const best = candidates[0];
-          const parts = (best.client || '').split(':');
-          return parts[0] || undefined;
+        for (const [client, info] of activityMap.entries()) {
+          const delta = Math.abs(refMs - info.lastActivity.getTime());
+          if (!bestFromMap || delta < bestFromMap.delta) {
+            bestFromMap = { client: info.client, lastActivity: info.lastActivity, delta };
+          }
+        }
+
+        // If we found a near candidate within threshold, return it
+        if (bestFromMap && bestFromMap.delta <= maxAgeMs) {
+          const parts = (bestFromMap.client || '').split(':');
+          const ip = parts[0] || undefined;
+          const port = parts.length > 1 ? parseInt(parts[1]) : undefined;
+          return ip ? { ip, port } : undefined;
+        }
+
+        // Otherwise log debug info
+        try {
+          const debugEntries = Array.from(activityMap.entries()).map(([k, v]) => ({ client: k, lastActivity: v.lastActivity.toISOString(), deltaMs: Math.abs(refMs - v.lastActivity.getTime()) }));
+          logger.warn('ServerManager', 'No UDP activity candidate within threshold (recentClientActivity)', { serverId, referenceTime: new Date(refMs).toISOString(), maxAgeMs, entries: debugEntries });
+        } catch (e) {
+          // ignore logging failures
         }
       }
 
@@ -575,16 +603,42 @@ export class ServerManager {
       const stats: any = (udpProxy as any).getStats ? (udpProxy as any).getStats() : null;
       if (!stats || !Array.isArray(stats.connections)) return undefined;
 
-      const recent = stats.connections
-        .map((c: any) => ({ client: c.client, lastActivity: new Date(c.lastActivity), delta: Math.abs(refMs - new Date(c.lastActivity).getTime()) }))
-        .filter((c: any) => c.delta <= maxAgeMs)
-        .sort((a: any, b: any) => a.delta - b.delta)[0];
+      let bestFromStats: { client: string; lastActivity: Date; delta: number } | null = null;
+      for (const c of stats.connections) {
+        const last = new Date(c.lastActivity);
+        const delta = Math.abs(refMs - last.getTime());
+        if (!bestFromStats || delta < bestFromStats.delta) {
+          bestFromStats = { client: c.client, lastActivity: last, delta };
+        }
+      }
 
-      if (!recent) return undefined;
+      if (bestFromStats && bestFromStats.delta <= maxAgeMs) {
+        const parts = (bestFromStats.client || '').split(':');
+        const ip = parts[0] || undefined;
+        const port = parts.length > 1 ? parseInt(parts[1]) : undefined;
+        return ip ? { ip, port } : undefined;
+      }
 
-      const clientStr: string = recent.client || '';
-      const parts = clientStr.split(':');
-      return parts[0] || undefined;
+      // Last-resort: if we have any candidate from the map, pick the most-recent one even if it exceeded threshold
+      if (bestFromMap) {
+        const parts = (bestFromMap.client || '').split(':');
+        const ip = parts[0] || undefined;
+        const port = parts.length > 1 ? parseInt(parts[1]) : undefined;
+        logger.warn('ServerManager', 'No UDP activity within threshold, selecting most-recent entry from recentClientActivity as last-resort', { serverId, client: bestFromMap.client, deltaMs: bestFromMap.delta });
+        return ip ? { ip, port } : undefined;
+      }
+
+      // Otherwise pick most recent from stats if present
+      if (bestFromStats) {
+        const parts = (bestFromStats.client || '').split(':');
+        const ip = parts[0] || undefined;
+        const port = parts.length > 1 ? parseInt(parts[1]) : undefined;
+        logger.warn('ServerManager', 'No UDP activity within threshold, selecting most-recent entry from udpProxy.getStats() as last-resort', { serverId, client: bestFromStats.client, deltaMs: bestFromStats.delta });
+        return ip ? { ip, port } : undefined;
+      }
+
+      logger.warn('ServerManager', 'No UDP activity candidates found at all', { serverId });
+      return undefined;
     } catch (err) {
       // 予期せぬエラーは無視して undefined を返す
       return undefined;
@@ -720,6 +774,11 @@ export class ServerManager {
               this.recentClientActivity.set(server.id, map);
             }
             map.set(key, { client: key, lastActivity: new Date() });
+            try {
+              logger.debug('ServerManager', 'Recorded UDP activity', { serverId: server.id, client: key, time: new Date().toISOString() });
+            } catch (e) {
+              // ignore logging errors
+            }
           } catch (e) {
             // ignore
           }

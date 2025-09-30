@@ -49,10 +49,33 @@ export class WebSocketServer {
     console.log(`🚀 WebSocket server running on http://localhost:${this.port}`);
   }
 
-  public stop(): void {
+  public async stop(): Promise<void> {
+    try {
+      // Ask router to stop all managed servers first
+      if (this.router && typeof (this.router as any).stopAllServers === 'function') {
+        await (this.router as any).stopAllServers();
+      }
+    } catch (e) {
+      console.warn('⚠️ Error while stopping managed servers during shutdown:', e);
+    }
+
     if (this.server) {
-      this.connectionManager.cleanup();
-      this.server.stop();
+      try {
+        this.connectionManager.cleanup();
+      } catch (e) {
+        console.warn('⚠️ Error during connectionManager.cleanup():', e);
+      }
+
+      try {
+        // Bun's server.stop may be synchronous; call it and ignore promise if not present
+        const res = (this.server as any).stop();
+        if (res && typeof res.then === 'function') {
+          await res;
+        }
+      } catch (e) {
+        console.warn('⚠️ Error while stopping HTTP/WebSocket server:', e);
+      }
+
       console.log("📦 WebSocket server stopped");
     }
   }

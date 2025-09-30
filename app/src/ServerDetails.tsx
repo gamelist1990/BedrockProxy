@@ -743,7 +743,7 @@ function ServerDetails() {
                                   {/* Optionally show player IP when enabled in operations */}
                                   {showPlayerIPs && player.ipAddress && (
                                     <Typography variant="caption" className="muted" sx={{ marginLeft: 1 }}>
-                                      • {player.ipAddress}
+                                      • {player.ipAddress}{player.port ? `:${player.port}` : ''}
                                     </Typography>
                                   )}
                               </Stack>

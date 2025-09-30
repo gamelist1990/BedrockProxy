@@ -280,6 +280,24 @@ export class MessageRouter {
     });
   }
 
+  // Graceful stop: request ServerManager to stop all running servers
+  public async stopAllServers(): Promise<void> {
+    try {
+      const servers = this.serverManager.getServers();
+      for (const s of servers) {
+        if (s.status && s.status !== 'offline') {
+          try {
+            await this.serverManager.performServerAction({ id: s.id, action: 'stop' });
+          } catch (e) {
+            console.warn(`⚠️ Failed to stop server ${s.name} during shutdown:`, e);
+          }
+        }
+      }
+    } catch (err) {
+      console.error('❌ Error while stopping all servers:', err);
+    }
+  }
+
   // イベントブロードキャスト（WebSocketServerに委譲）
   private broadcastEvent(eventType: string, data: any): void {
     // この関数は実際にはWebSocketServerから呼び出されるように設計する

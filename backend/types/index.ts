@@ -9,6 +9,7 @@ export interface Player {
   joinTime: Date;
   leaveTime?: Date;
   ipAddress?: string;
+  port?: number;
   icon?: string; // base64エンコードされたプレイヤーアイコン
 }
 
@@ -21,6 +22,7 @@ export interface PlayerPacket {
   xuid: string;
   action: PlayerAction;
   ipAddress?: string;
+  port?: number;
   icon?: string;
   timestamp: Date;
 }

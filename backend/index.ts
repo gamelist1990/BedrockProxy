@@ -23,12 +23,37 @@ try {
 // Graceful shutdown
 process.on("SIGINT", () => {
   console.log("\n🛑 Shutting down server...");
-  wsServer.stop();
-  process.exit(0);
+  try {
+    // stop may perform async work; call and wait briefly
+    wsServer.stop();
+    // give background tasks a short moment to finish
+    setTimeout(() => process.exit(0), 1500);
+  } catch (e) {
+    console.error('Error during shutdown:', e);
+    process.exit(1);
+  }
 });
 
-process.on("SIGTERM", () => {
-  console.log("\n🛑 Shutting down server...");
-  wsServer.stop();
-  process.exit(0);
-});
+  process.on('SIGINT', async () => {
+    console.log('Received SIGINT, shutting down...');
+    try {
+      await wsServer.stop();
+      console.log('Shutdown complete, exiting.');
+      process.exit(0);
+    } catch (e) {
+      console.error('Error during shutdown:', e);
+      process.exit(1);
+    }
+  });
+
+  process.on('SIGTERM', async () => {
+    console.log('Received SIGTERM, shutting down...');
+    try {
+      await wsServer.stop();
+      console.log('Shutdown complete, exiting.');
+      process.exit(0);
+    } catch (e) {
+      console.error('Error during shutdown:', e);
+      process.exit(1);
+    }
+  });

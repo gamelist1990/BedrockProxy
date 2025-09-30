@@ -79,10 +79,18 @@ export class UDPProxy {
     // メッセージを転送
     connection.targetSocket.send(data, this.config.targetPort, this.config.targetHost, (error) => {
       if (error) {
-        logger.error('udp-proxy', 'Failed to forward message to target', {
-          client: connectionKey,
-          error: error.message
-        });
+        // Suppress noisy 'Socket is closed' messages; treat them as debug
+        if (String(error.message).includes('Socket is closed') || String(error.message).includes('closed')) {
+          logger.debug('udp-proxy', 'Failed to forward message to target (socket closed)', {
+            client: connectionKey,
+            error: error.message
+          });
+        } else {
+          logger.error('udp-proxy', 'Failed to forward message to target', {
+            client: connectionKey,
+            error: error.message
+          });
+        }
       }
     });
   }
@@ -94,10 +102,17 @@ export class UDPProxy {
     targetSocket.on('message', (data) => {
       this.server.send(data, clientPort, clientAddress, (error) => {
         if (error) {
-          logger.error('udp-proxy', 'Failed to send response to client', {
-            client: `${clientAddress}:${clientPort}`,
-            error: error.message
-          });
+          if (String(error.message).includes('Socket is closed') || String(error.message).includes('closed')) {
+            logger.debug('udp-proxy', 'Failed to send response to client (socket closed)', {
+              client: `${clientAddress}:${clientPort}`,
+              error: error.message
+            });
+          } else {
+            logger.error('udp-proxy', 'Failed to send response to client', {
+              client: `${clientAddress}:${clientPort}`,
+              error: error.message
+            });
+          }
         }
       });
     });
