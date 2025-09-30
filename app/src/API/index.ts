@@ -27,6 +27,7 @@ export interface Server {
   blockSameIP?: boolean;
   forwardAddress?: string;
   description?: string;
+  docs?: string;
   players?: Player[];
   executablePath?: string;
   serverDirectory?: string;

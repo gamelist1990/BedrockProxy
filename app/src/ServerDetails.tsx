@@ -106,6 +106,11 @@ function ServerDetails() {
   const [editDestPort, setEditDestPort] = useState<string>("");
   const [editMaxPlayers, setEditMaxPlayers] = useState<number>(0);
   const [editIconUrl, setEditIconUrl] = useState<string>("");
+  // server docs/notes
+  const [editDocs, setEditDocs] = useState<string>("");
+  // Listen/receiving settings
+  const [editListenIP, setEditListenIP] = useState<string>("127.0.0.1");
+  const [editListenPort, setEditListenPort] = useState<string>("19133");
 
   // Snackbar for notifications
   const [snackbarOpen, setSnackbarOpen] = useState(false);
@@ -130,8 +135,18 @@ function ServerDetails() {
   setEditName(data.server.name || '');
   setEditDestIP(data.server.destinationAddress?.split(':')[0] || '127.0.0.1');
   setEditDestPort(data.server.destinationAddress?.split(':')[1] || '19133');
+  // initialize listen/receiving address from server.address
+  try {
+    const parts = (data.server.address || '').split(':');
+    setEditListenIP(parts[0] || '127.0.0.1');
+    setEditListenPort(parts[1] || '19133');
+  } catch (e) {
+    setEditListenIP('127.0.0.1');
+    setEditListenPort('19133');
+  }
   setEditMaxPlayers(data.server.maxPlayers || 0);
   setEditIconUrl(data.server.iconUrl || '');
+  setEditDocs(data.server.docs ?? data.server.description ?? '');
       // Load per-server preference for showing player IPs from localStorage
       try {
         const key = `bp_showPlayerIPs_${data.server.id}`;
@@ -591,7 +606,7 @@ function ServerDetails() {
                         <TextField 
                           className="form-field" 
                           label={t('settings.receivingIPv4')} 
-                          value={server.address.split(':')[0]} 
+                          value={editListenIP} 
                           fullWidth 
                           disabled 
                           helperText={t('settings.ipv4Fixed')}
@@ -599,7 +614,8 @@ function ServerDetails() {
                         <TextField 
                           className="form-field" 
                           label={t('settings.receivingPort')} 
-                          defaultValue={server.address.split(':')[1] || '19132'} 
+                          value={editListenPort}
+                          onChange={(e) => setEditListenPort(e.target.value)}
                           type="number" 
                           style={{ minWidth: 120 }}
                           helperText=" "
@@ -636,14 +652,33 @@ function ServerDetails() {
 
                     <Stack direction="row" spacing={2} justifyContent="flex-end" sx={{ mt: 1 }}>
                       <Button variant="contained" color="primary" onClick={async () => {
-                        // Save basic settings: name, destinationAddress, maxPlayers, iconUrl
+                        // Save basic settings: name, destinationAddress, listen address, maxPlayers, iconUrl
                         try {
+                          // validate ports
+                          const listenPortNum = Number(editListenPort);
+                          const destPortNum = Number(editDestPort);
+                          if (!Number.isInteger(listenPortNum) || listenPortNum < 1 || listenPortNum > 65535) {
+                            setSnackbarMessage(t('settings.invalidPort') || 'Invalid listening port');
+                            setSnackbarSeverity('error');
+                            setSnackbarOpen(true);
+                            return;
+                          }
+                          if (!Number.isInteger(destPortNum) || destPortNum < 1 || destPortNum > 65535) {
+                            setSnackbarMessage(t('settings.invalidPort') || 'Invalid destination port');
+                            setSnackbarSeverity('error');
+                            setSnackbarOpen(true);
+                            return;
+                          }
+
                           const dest = `${editDestIP}:${editDestPort}`;
+                          const address = `${editListenIP}:${editListenPort}`;
                           const updates: any = {
                             name: editName,
                             destinationAddress: dest,
+                            address,
                             maxPlayers: editMaxPlayers,
                             iconUrl: editIconUrl || undefined,
+                            docs: editDocs || undefined,
                           };
                           await bedrockProxyAPI.updateServer(server.id, updates);
                           setSnackbarMessage(t('settings.saveTriggered') || 'Saving...');
@@ -677,7 +712,7 @@ function ServerDetails() {
                     </Box>
                     <Box className="info-block">
                       <Typography variant="subtitle2">{t('settings.description')}</Typography>
-                      <TextField className="form-field" placeholder={t('form.description')} multiline rows={4} fullWidth />
+                      <TextField className="form-field" placeholder={t('form.description')} multiline rows={4} fullWidth value={editDocs} onChange={(e) => setEditDocs(e.target.value)} />
                     </Box>
                   </Stack>
                 </Grid>
