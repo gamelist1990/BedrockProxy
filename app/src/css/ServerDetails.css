@@ -271,6 +271,51 @@
   color: var(--muted);
 }
 
+/* Player row improvements: left (order/time) and right (ip:port) layout */
+.player-secondary-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+}
+.player-secondary-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1 1 auto;
+  min-width: 0; /* allow children to truncate */
+}
+.player-secondary-left .join-order,
+.player-secondary-left .join-time {
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  overflow: hidden;
+}
+.player-ip {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-size: 0.75rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 160px;
+  text-align: right;
+}
+
+@media (max-width: 600px) {
+  .player-secondary-row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+  }
+  .player-ip {
+    text-align: left;
+    max-width: 100%;
+    font-size: 0.72rem;
+  }
+}
+
 .console-field {
   border-radius: 14px;
   overflow: hidden;

@@ -721,42 +721,43 @@ function ServerDetails() {
                     </Typography>
                     <Chip label={`${displayedPlayers.length} ${t('stats.people')}`} size="small" />
                   </Stack>
-                  <List dense className="player-list">
-                    {displayedPlayers.length > 0 ? (
-                      displayedPlayers.map((player, index) => (
-                        <ListItem key={player.name} className="player-list-item">
-                          <ListItemText 
-                            primary={player.name} 
-                            secondary={
-                              <Stack direction="row" spacing={1} alignItems="center">
-                                  <Typography variant="caption" className="muted">
-                                    {t('players.joinOrder')}: #{index + 1}
-                                  </Typography>
-                                  <Typography variant="caption" className="muted">
-                                    • {player.joinTime.toLocaleTimeString('ja-JP', { 
-                                      hour: '2-digit', 
-                                      minute: '2-digit',
-                                      month: 'short',
-                                      day: 'numeric'
-                                    })} {t('players.joined')}
-                                  </Typography>
-                                  {/* Optionally show player IP when enabled in operations */}
+                    <List dense className="player-list">
+                      {displayedPlayers.length > 0 ? (
+                        displayedPlayers.map((player, index) => (
+                          <ListItem key={player.id ?? player.name} className="player-list-item">
+                            <ListItemText
+                              primary={player.name}
+                              secondary={
+                                <div className="player-secondary-row">
+                                  <div className="player-secondary-left">
+                                    <Typography variant="caption" className="muted join-order">
+                                      {t('players.joinOrder')}: #{index + 1}
+                                    </Typography>
+                                    <Typography variant="caption" className="muted join-time">
+                                      • {player.joinTime.toLocaleString('ja-JP', {
+                                        month: 'numeric',
+                                        day: 'numeric',
+                                        hour: '2-digit',
+                                        minute: '2-digit'
+                                      })} {t('players.joined')}
+                                    </Typography>
+                                  </div>
                                   {showPlayerIPs && player.ipAddress && (
-                                    <Typography variant="caption" className="muted" sx={{ marginLeft: 1 }}>
-                                      • {player.ipAddress}{player.port ? `:${player.port}` : ''}
+                                    <Typography variant="caption" className="muted player-ip" title={`${player.ipAddress}${player.port ? `:${player.port}` : ''}`}>
+                                      {player.ipAddress}{player.port ? `:${player.port}` : ''}
                                     </Typography>
                                   )}
-                              </Stack>
-                            } 
-                          />
+                                </div>
+                              }
+                            />
+                          </ListItem>
+                        ))
+                      ) : (
+                        <ListItem className="player-list-empty">
+                          <ListItemText primary={t('players.noOnline')} />
                         </ListItem>
-                      ))
-                    ) : (
-                      <ListItem className="player-list-empty">
-                        <ListItemText primary={t('players.noOnline')} />
-                      </ListItem>
-                    )}
-                  </List>
+                      )}
+                    </List>
                 </Box>
               </Stack>
             </CardContent>

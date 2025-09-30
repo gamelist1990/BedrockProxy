@@ -219,10 +219,33 @@ function ServerList() {
       });
     };
 
+    // Update server player counts in real-time when players join/leave
+    const handlePlayerJoinedOverview = (data: any) => {
+      try {
+        const sid = data?.serverId ?? data?.server?.id ?? null;
+        if (!sid) return;
+        setServers(prev => prev.map(s => s.id === sid ? { ...s, playersOnline: (s.playersOnline ?? 0) + 1 } : s));
+      } catch (e) {
+        console.debug('player.joined handler error', e);
+      }
+    };
+
+    const handlePlayerLeftOverview = (data: any) => {
+      try {
+        const sid = data?.serverId ?? data?.server?.id ?? null;
+        if (!sid) return;
+        setServers(prev => prev.map(s => s.id === sid ? { ...s, playersOnline: Math.max((s.playersOnline ?? 1) - 1, 0) } : s));
+      } catch (e) {
+        console.debug('player.left handler error', e);
+      }
+    };
+
     bedrockProxyAPI.on('server.created', handleServerCreated);
     bedrockProxyAPI.on('server.updated', handleServerUpdated);
     bedrockProxyAPI.on('server.deleted', handleServerDeleted);
     bedrockProxyAPI.on('server.statusChanged', handleServerStatusChanged);
+  bedrockProxyAPI.on('player.joined', handlePlayerJoinedOverview);
+  bedrockProxyAPI.on('player.left', handlePlayerLeftOverview);
     bedrockProxyAPI.onConnection('latencyUpdate', handleConnectionLatency as any);
     bedrockProxyAPI.onConnection('connected', () => handleConnectionUpdate({ status: 'connected' }));
     bedrockProxyAPI.onConnection('disconnected', () => handleConnectionUpdate({ status: 'disconnected' }));
@@ -234,6 +257,8 @@ function ServerList() {
       bedrockProxyAPI.off('server.updated', handleServerUpdated);
       bedrockProxyAPI.off('server.deleted', handleServerDeleted);
       bedrockProxyAPI.off('server.statusChanged', handleServerStatusChanged);
+  bedrockProxyAPI.off('player.joined', handlePlayerJoinedOverview);
+  bedrockProxyAPI.off('player.left', handlePlayerLeftOverview);
       bedrockProxyAPI.offConnection('latencyUpdate', handleConnectionLatency as any);
       bedrockProxyAPI.offConnection('connected');
       bedrockProxyAPI.offConnection('disconnected');
