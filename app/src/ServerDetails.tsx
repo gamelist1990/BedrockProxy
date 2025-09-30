@@ -96,6 +96,8 @@ function ServerDetails() {
   const [forwardAddress, setForwardAddress] = useState("");
   const [customForwardAddress, setCustomForwardAddress] = useState("");
   const [blockSameIP, setBlockSameIP] = useState(false);
+  // プレイヤーIP表示設定（プライバシー配慮のためデフォルトは false）
+  const [showPlayerIPs, setShowPlayerIPs] = useState(false);
 
   // サーバーデータの読み込み
   const loadServerData = useCallback(async () => {
@@ -111,6 +113,14 @@ function ServerDetails() {
       
       const data = await bedrockProxyAPI.getServerDetails(id);
       setServer(data.server);
+      // Load per-server preference for showing player IPs from localStorage
+      try {
+        const key = `bp_showPlayerIPs_${data.server.id}`;
+        const raw = localStorage.getItem(key);
+        setShowPlayerIPs(raw === 'true');
+      } catch (e) {
+        // ignore localStorage errors
+      }
       setPlayers(data.players);
       
       // 設定値を初期化
@@ -210,6 +220,18 @@ function ServerDetails() {
       return newLines;
     });
   }, [id, server?.name]);
+
+  // Toggle handler for showing player IPs (persist per-server)
+  const handleToggleShowPlayerIPs = useCallback((value: boolean) => {
+    if (!server) return;
+    try {
+      const key = `bp_showPlayerIPs_${server.id}`;
+      localStorage.setItem(key, value ? 'true' : 'false');
+    } catch (e) {
+      // ignore
+    }
+    setShowPlayerIPs(value);
+  }, [server]);
 
   // 初期化とイベント処理
   useEffect(() => {
@@ -643,17 +665,23 @@ function ServerDetails() {
                             primary={player.name} 
                             secondary={
                               <Stack direction="row" spacing={1} alignItems="center">
-                                <Typography variant="caption" className="muted">
-                                  {t('players.joinOrder')}: #{index + 1}
-                                </Typography>
-                                <Typography variant="caption" className="muted">
-                                  • {player.joinTime.toLocaleTimeString('ja-JP', { 
-                                    hour: '2-digit', 
-                                    minute: '2-digit',
-                                    month: 'short',
-                                    day: 'numeric'
-                                  })} {t('players.joined')}
-                                </Typography>
+                                  <Typography variant="caption" className="muted">
+                                    {t('players.joinOrder')}: #{index + 1}
+                                  </Typography>
+                                  <Typography variant="caption" className="muted">
+                                    • {player.joinTime.toLocaleTimeString('ja-JP', { 
+                                      hour: '2-digit', 
+                                      minute: '2-digit',
+                                      month: 'short',
+                                      day: 'numeric'
+                                    })} {t('players.joined')}
+                                  </Typography>
+                                  {/* Optionally show player IP when enabled in operations */}
+                                  {showPlayerIPs && player.ipAddress && (
+                                    <Typography variant="caption" className="muted" sx={{ marginLeft: 1 }}>
+                                      • {player.ipAddress}
+                                    </Typography>
+                                  )}
                               </Stack>
                             } 
                           />
@@ -956,6 +984,23 @@ function ServerDetails() {
                       )}
                     </Box>
                   </Stack>
+                </Box>
+                <Divider />
+                <Box sx={{ mt: 2 }}>
+                  <Typography variant="subtitle2" className="section-title">{t('settings.playerList')}</Typography>
+                  <FormControlLabel
+                    control={
+                      <Switch
+                        checked={showPlayerIPs}
+                        onChange={(e) => handleToggleShowPlayerIPs(e.target.checked)}
+                        color="primary"
+                      />
+                    }
+                    label={<Box>
+                      <Typography variant="body2">{t('settings.showPlayerIPs') || 'プレイヤーのIPを表示'}</Typography>
+                      <Typography variant="caption" className="muted">{t('settings.showPlayerIPsDesc') || 'プライバシー保護のためデフォルトでは無効。サーバーごとに保存されます。'}</Typography>
+                    </Box>}
+                  />
                 </Box>
               </Stack>
             </CardContent>

@@ -1,6 +1,6 @@
 import { randomUUID } from "crypto";
 import * as path from "path";
-import { access } from "fs/promises";
+import { access, readFile, writeFile } from "fs/promises";
 import type { 
   Server, 
   ServerStatus, 
@@ -240,6 +240,15 @@ export class ServerManager {
       } as Events.ServerUpdated);
 
       console.log(`🔄 Server updated: ${server.name} (${changes.join(', ')})`);
+
+      // 非同期で server.properties を更新（存在すれば）
+      (async () => {
+        try {
+          await this.updateServerProperties(server, changes);
+        } catch (err) {
+          console.warn(`⚠️ Failed to update server.properties for ${server.name}:`, err);
+        }
+      })();
     }
 
     return server;
@@ -508,6 +517,55 @@ export class ServerManager {
         }
       }
     });
+  }
+
+  // server.properties を更新するヘルパー
+  private async updateServerProperties(server: Server, changes: string[]): Promise<void> {
+    // 必要な変更がなければ何もしない
+    const relevant = changes.some(c => ['maxPlayers', 'name', 'destinationAddress'].includes(c));
+    if (!relevant) return;
+
+    if (!server.serverDirectory) return;
+
+    const propsPath = `${server.serverDirectory}/server.properties`;
+    try {
+      // 既存ファイルを読み込み
+      const content = await readFile(propsPath, 'utf-8');
+      const lines = content.split(/\r?\n/);
+
+      const updatedLines = lines.map(line => {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith('#') || !trimmed.includes('=')) return line;
+        const [key, ...rest] = line.split('=');
+        const k = key.trim();
+
+        if (k.toLowerCase() === 'max-players' && changes.includes('maxPlayers')) {
+          return `max-players=${server.maxPlayers}`;
+        }
+
+        if (k.toLowerCase() === 'server-name' && changes.includes('name')) {
+          // escape any equals in name
+          const escaped = String(server.name).replace(/\r?\n/g, ' ');
+          return `server-name=${escaped}`;
+        }
+
+        if ((k.toLowerCase() === 'server-port' || k.toLowerCase() === 'server-portv4') && changes.includes('destinationAddress')) {
+          // destinationAddress is like ip:port
+          const parts = String(server.destinationAddress || '').split(':');
+          const port = parts.length > 1 ? parts[1] : parts[0] || '';
+          return `${k}=${port}`;
+        }
+
+        return line;
+      });
+
+      // 書き込み（上書き）
+      await writeFile(propsPath, updatedLines.join('\n'), 'utf-8');
+      logger.info('ServerManager', `Updated server.properties for ${server.name}`, { path: propsPath, changes });
+    } catch (err) {
+      // ファイルが存在しないか書き込み権限がない場合は警告を出すだけ
+      logger.warn('ServerManager', `Could not update server.properties at ${propsPath}: ${err}`);
+    }
   }
 
   // サーバー開始

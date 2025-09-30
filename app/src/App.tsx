@@ -407,7 +407,12 @@ function ServerList() {
     <Box component="main" className="app-root">
       {/* connection indicator */}
       <Stack direction="row" spacing={2} sx={{ position: 'fixed', top: 12, right: 16, zIndex: 1300 }}>
-        <Chip label={connectionState ?? (isConnected ? 'connected' : 'disconnected')} color={isConnected ? 'success' : 'default'} size="small" />
+        {/* Show a red chip when disconnected so users don't mistake it for running */}
+        <Chip
+          label={connectionState ?? (isConnected ? 'connected' : 'disconnected')}
+          color={connectionState === 'disconnected' || !isConnected ? 'error' : (isConnected ? 'success' : 'default')}
+          size="small"
+        />
         <Chip label={latency !== null ? `${latency} ms` : '—'} size="small" />
       </Stack>
       <Stack spacing={6} className="content-wrapper">
