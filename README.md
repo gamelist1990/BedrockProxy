@@ -1,47 +1,49 @@
 # BedrockProxy
 
-BedrockProxy is a lightweight WebSocket proxy and desktop UI for interacting with Bedrock-compatible servers. It includes a Bun-based backend (WebSocket server) and a React + Tauri frontend (desktop app using Vite + Tauri).
+BedrockProxy は、Bedrock 互換サーバーと対話するための軽量な WebSocket プロキシとデスクトップ UI です。本プロジェクトは Bun ベースのバックエンド（WebSocket サーバ）と、React + Vite + Tauri を用いたフロントエンド（デスクトップアプリ）を含みます。
 
-## Features
+## 機能
 
-- Bun-based WebSocket backend with health check and broadcast endpoints
-- Connection and subscription management for event-based messaging
-- React + Vite frontend with optional Tauri desktop packaging
-- Simple debug broadcast HTTP endpoint for local testing
+- Bun ベースの WebSocket バックエンド（ヘルスチェックとブロードキャスト用エンドポイントを含む）
+- 接続管理とサブスクリプションによるイベント駆動メッセージ処理
+- React + Vite を用いたフロントエンド、Tauri によるデスクトップパッケージ化のサポート
+- ローカルテスト用の簡易デバッグ用ブロードキャスト HTTP エンドポイント
 
-## Repository layout
+## リポジトリ構成
 
-- backend/ - Bun-based server implementation (TypeScript)
-  - backend/index.ts — entrypoint that starts the WebSocket server (PORT env var, default 8080)
-  - backend/server.ts — WebSocket server logic and health endpoint
-- app/ - React + Vite frontend and Tauri configuration
-  - app/package.json — dev/build scripts (dev, build, preview, tauri)
-  - app/src - React source
+- backend/ - Bun ベースのサーバ実装（TypeScript）
+  - backend/index.ts — エントリポイント（環境変数 PORT、デフォルト 8080）
+  - backend/server.ts — WebSocket サーバロジックとヘルスエンドポイント
+- app/ - React + Vite フロントエンドと Tauri 設定
+  - app/package.json — 開発・ビルド用スクリプト（dev, build, preview, tauri）
+  - app/src — React ソースコード
 
-## Quickstart (development)
+## 開発向けクイックスタート
 
-Prerequisites
+前提条件
 
-- Bun (for running the backend) — https://bun.sh
-- Node.js + npm (for frontend and Tauri) — https://nodejs.org
-- Rust + Tauri prerequisites if you want to build the desktop app — https://tauri.app
+- Bun（バックエンド実行用） — https://bun.sh
+- Node.js + npm（フロントエンド／Tauri 用） — https://nodejs.org
+- Rust + Tauri のビルド要件（デスクトップアプリをビルドする場合） — https://tauri.app
 
-Start backend (development)
+バックエンドを起動（開発）
 
-1. From repository root run the backend with Bun:
+1. リポジトリルートから Bun でバックエンドを起動します:
 
 ```bash
-# run from repo root
+# リポジトリルートで実行
 PORT=8080 bun ./backend/index.ts
 ```
 
-2. Health check
+2. ヘルスチェック
 
-Open: http://localhost:8080/health
+ブラウザで以下へアクセスします:
 
-WebSocket endpoint: ws://localhost:8080
+http://localhost:8080/health
 
-Start frontend (development)
+WebSocket エンドポイント: ws://localhost:8080
+
+フロントエンドを起動（開発）
 
 ```bash
 cd app
@@ -49,7 +51,7 @@ npm install
 npm run dev
 ```
 
-Start Tauri desktop app (optional)
+Tauri デスクトップアプリを起動（任意）
 
 ```bash
 cd app
@@ -57,33 +59,33 @@ npm install
 npm run tauri dev
 ```
 
-## API & Debug endpoints
+## API とデバッグ用エンドポイント
 
-- GET /health — returns server status and connection statistics (backend/server.ts:101-112)
-- POST /debug/broadcast — send a debug broadcast to subscribers (backend/server.ts:114-135)
+- GET /health — サーバステータスと接続統計を返します（backend/server.ts の該当箇所を参照）
+- POST /debug/broadcast — サブスクライバーへデバッグ用ブロードキャストを送信します（backend/server.ts の該当箇所を参照）
 
-WebSocket messages
+WebSocket メッセージ
 
-- Supported control messages: ping, pong, subscribe, unsubscribe
-- Generic request/response messages are routed via MessageRouter
+- サポートされる制御メッセージ: ping, pong, subscribe, unsubscribe
+- ジェネリックなリクエスト/レスポンスは MessageRouter を通してルーティングされます
 
-## Configuration
+## 設定
 
-- PORT — backend listens on this port (default 8080)
-- No other config files detected; check backend and app source for environment-specific values
+- PORT — バックエンドがリッスンするポート（デフォルト 8080）
+- その他の設定は backend と app のソースや環境変数を確認してください
 
-## Development notes
+## 開発メモ
 
-- Backend is designed to run on Bun and uses Bun.serve for WebSocket handling (backend/server.ts:37-50)
-- Frontend uses Vite + React and includes Tauri configuration for desktop packaging (app/src-tauri)
+- バックエンドは Bun で実行され、Bun.serve を利用した WebSocket ハンドリングを行います（backend/server.ts を参照）
+- フロントエンドは Vite + React を使用し、Tauri によるデスクトップパッケージング設定が app/src-tauri にあります
 
-## Contributing
+## 貢献
 
-Contributions welcome. Please open issues or PRs describing changes.
+貢献は歓迎します。問題やプルリクエストを作成してください。
 
-## License
+## ライセンス
 
-No LICENSE file detected in the repository. Please add a LICENSE file to clarify the project license.
+リポジトリに LICENSE ファイルが見つかりません。プロジェクトのライセンスを明確にするために LICENSE ファイルの追加を検討してください。
 
 ---
 
