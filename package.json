@@ -1,17 +1,18 @@
 {
   "name": "bedrockproxy",
   "module": "backend/index.ts",
-  "type": "module",
+  "devDependencies": {
+    "@playwright/test": "^1.55.1",
+    "@types/bun": "latest",
+    "typescript": "^5.9.3"
+  },
+  "peerDependencies": {
+    "typescript": "^5.0.0"
+  },
   "scripts": {
     "test:playwright": "playwright test",
     "test:playwright:ui": "playwright test --ui",
     "test:playwright:headed": "playwright test --headed"
   },
-  "devDependencies": {
-    "@playwright/test": "^1.55.1",
-    "@types/bun": "latest"
-  },
-  "peerDependencies": {
-    "typescript": "^5.0.0"
-  }
+  "type": "module"
 }

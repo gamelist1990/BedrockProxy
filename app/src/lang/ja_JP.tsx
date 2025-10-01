@@ -35,6 +35,8 @@ export const ja_JP = {
   "overview.autoRestart": "自動再起動",
   "overview.autoRestartDesc": "サーバーがクラッシュした場合に自動的に再起動します",
   "overview.proxyConfig": "プロキシ設定",
+  "overview.proxyProtocolV2": "Proxy Protocol v2 サポート",
+  "overview.proxyProtocolV2Desc": "Proxy Protocol v2 ヘッダーを解析して真のクライアントIPを取得します",
   "overview.receivingPort": "受信ポート",
   "overview.receivingPortDesc": "プロキシサーバーがプレイヤー接続を受け付けるポート",
   "overview.destinationPort": "転送先ポート",
@@ -102,6 +104,8 @@ export const ja_JP = {
   "common.loading": "読み込み中...",
   "common.error": "エラーが発生しました",
   "common.servers": "サーバー",
+  "common.unsavedChanges": "未保存の変更があります",
+  "common.unsavedChangesMessage": "操作パネルに未保存の変更があります。保存しますか？",
   
   // サーバーリスト・管理
   "server.managedServers": "管理中のサーバー",
@@ -252,6 +256,17 @@ export const ja_JP = {
   "plugins.additionalInfo": "追加情報",
   "plugins.homepage": "ホームページ",
   "plugins.minVersion": "最小バージョン",
+  "plugins.reload": "更新",
+  "plugins.reloaded": "プラグインをリロードしました",
+  "plugins.reloadFailed": "プラグインのリロードに失敗しました",
+
+  // サーバーモード関連
+  "server.mode": "サーバーモード",
+  "server.mode.normal": "通常モード (exe必須)",
+  "server.mode.proxyOnly": "Proxy Only (exe不要)",
+  "server.mode.selectDescription": "追加するサーバーのモードを選択してください",
+  "server.mode.normalDescription": "exeファイルから自動的にサーバー設定を検知して追加します",
+  "server.mode.proxyOnlyDescription": "プロキシサーバーのみを起動します(exe不要)",
 };
 
 export default ja_JP;

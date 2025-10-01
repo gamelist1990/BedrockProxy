@@ -263,6 +263,31 @@ export class BedrockProxyAPI {
 
   // サーバー操作（開始/停止/再起動/ブロック）
   public async performServerAction(id: string, action: 'start' | 'stop' | 'restart' | 'block', targetIP?: string): Promise<Server> {
+    // Implement frontend-side restart as stop -> start sequence to ensure
+    // proxy and process lifecycle are properly handled. This avoids relying
+    // on a single 'restart' action on the backend which sometimes doesn't
+    // fully reinitialize proxy state.
+    if (action === 'restart') {
+      // First attempt to stop the server (ignore if already stopped)
+      try {
+        await this.sendRequest<{ success: true }>('servers.action', { id, action: 'stop' }, 30000);
+      } catch (err) {
+        // Log but continue to attempt start — stop may already be in progress/absent
+        console.warn('performServerAction(restart): stop failed or returned error, continuing to start', err);
+      }
+
+      // Small delay to let backend settle sockets/processes
+      await new Promise((r) => setTimeout(r, 500));
+
+      // Now start
+      const startResp = await this.sendRequest<{ server: Server }>('servers.action', { id, action: 'start', targetIP }, 60000);
+      return {
+        ...startResp.server,
+        createdAt: new Date(startResp.server.createdAt),
+        updatedAt: new Date(startResp.server.updatedAt),
+      };
+    }
+
     const response = await this.sendRequest<{ server: Server }>('servers.action', { id, action, targetIP });
     return {
       ...response.server,

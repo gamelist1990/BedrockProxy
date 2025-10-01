@@ -1,4 +1,176 @@
-# BedrockProxy Enhanced Plugin System - Summary
+# BedrockProxy プラグインシステム 変更履歴
+
+## 📅 2025年10月1日 - v2.0.0
+
+### 🎉 メジャーアップデート
+
+#### ドキュメント完全刷新
+- **README.md**: 開発者向けに完全書き直し
+  - クイックスタートガイド
+  - 詳細なAPIリファレンス
+  - 実用的なサンプルコード集
+  - ベストプラクティス
+  - 日本語での包括的な説明
+
+#### 型定義の大幅改善
+- **全型定義ファイルにJSDoc追加**
+  - `api.d.ts`: 詳細な説明と使用例を追加
+  - `storage.d.ts`: 暗号化・圧縮・TTLの説明を詳細化
+  - `http.d.ts`: 各HTTPメソッドの用途を明確化
+  - `filesystem.d.ts`: セキュリティとパス制限の説明追加
+  - `events.d.ts`: 各イベントデータ構造の詳細化
+  - `player.d.ts`: プレイヤー情報の詳細化
+  - `server.d.ts`: サーバー統計情報の追加
+  - `plugin.d.ts`: ライフサイクルフックの詳細説明
+
+- **型定義の利点**
+  - VSCodeでの自動補完が大幅に改善
+  - 各メソッドの説明がホバーで表示
+  - パラメータの型チェック
+  - 実用的なコード例が型定義内に含まれる
+
+#### API機能の完全実装確認
+以下の全APIが backend 実装と完全一致することを確認：
+
+**ロギングAPI**
+- `debug()`, `info()`, `warn()`, `error()`, `log()`
+- プラグイン名プレフィックス付きでクライアントコンソールにも出力
+
+**サーバーAPI**
+- `getServerInfo()`: サーバー情報取得
+- `getServerStats()`: 統計情報取得
+- `sendCommand()`: コンソールコマンド送信
+- `getConsoleOutput()`: コンソール出力取得
+
+**プレイヤーAPI**
+- `getPlayers()`: オンラインプレイヤー一覧
+- `getPlayer()`: IDでプレイヤー取得
+- `getPlayerByName()`: 名前でプレイヤー検索
+- `getPlayerStats()`: プレイヤー統計取得
+- `kickPlayer()`: プレイヤーをキック（実装中）
+- `tellPlayer()`: プレイヤーにメッセージ送信（実装中）
+- `broadcast()`: 全員にメッセージ送信
+
+**イベントシステム**
+- `on()`: イベントリスナー登録
+- `once()`: 一度だけ実行されるリスナー
+- `off()`: リスナー解除
+- `emit()`: カスタムイベント発火
+- `_triggerEvent()`: システムからのイベントトリガ（内部）
+
+**タイマーAPI**
+- `setInterval()`: 定期実行
+- `setTimeout()`: 遅延実行
+- `clearTimer()`: タイマーキャンセル
+
+**ストレージAPI** (`api.storage`)
+- `get()`, `set()`: 基本的な読み書き
+- `has()`, `delete()`, `clear()`: 管理操作
+- `keys()`, `values()`, `entries()`: 一覧取得
+- `size()`: ストレージサイズ取得
+- `namespace()`: 名前空間作成
+- オプション: `encrypt`, `compress`, `ttl`
+
+**HTTP API** (`api.http`)
+- `get()`, `post()`, `put()`, `delete()`, `patch()`: HTTPメソッド
+- `request()`: カスタムリクエスト
+- `download()`: ファイルダウンロード
+- `createWebhook()`: Webhookエンドポイント作成
+- `getWebhookHandler()`, `removeWebhook()`: Webhook管理
+
+**ファイルシステムAPI** (`api.fs`)
+- `readFile()`, `writeFile()`, `appendFile()`: ファイル読み書き
+- `deleteFile()`, `exists()`, `stat()`: ファイル管理
+- `mkdir()`, `readDir()`, `rmdir()`: ディレクトリ操作
+- `copyFile()`, `moveFile()`: ファイル操作
+- `readJSON()`, `writeJSON()`: JSON操作
+- `watch()`, `unwatch()`: ファイル監視
+- セキュリティ: プラグインディレクトリ外へのアクセス禁止
+
+**ユーティリティAPI**
+- `getVersion()`: APIバージョン取得
+- `isPluginLoaded()`: プラグインロード確認
+- `getLoadedPlugins()`: ロード済みプラグイン一覧
+- `callPlugin()`: プラグイン間通信
+
+#### ライフサイクル改善
+- **ライフサイクルコンテキスト**
+  - `api`: PluginAPIインスタンス
+  - `serverId`: サーバーID
+  - `metadata`: プラグインメタデータ
+  - `pluginDir`: プラグインディレクトリパス
+  - `dataDir`: データディレクトリパス
+
+- **ライフサイクルフック**
+  - `onLoad()`: ロード時（有効化前）
+  - `onEnable()`: 有効化時
+  - `onDisable()`: 無効化時
+  - `onUnload()`: アンロード時（無効化後）
+  - `onReload()`: 設定再読み込み時
+
+#### イベント強化
+- **新イベント**
+  - `playerJoin`: プレイヤー参加時
+  - `playerLeave`: プレイヤー退出時
+  - `serverStart`: サーバー起動時
+  - `serverStop`: サーバー停止時
+  - `serverStatusChange`: ステータス変更時
+  - `consoleOutput`: コンソール出力時
+  - `consoleCommand`: コンソールコマンド実行時
+  - `error`: エラー発生時
+
+- **イベントデータ構造の明確化**
+  - 各イベントに詳細なTypeScript型定義
+  - プレイヤー情報、サーバー情報、タイムスタンプなどを含む
+
+#### バグ修正と改善
+- プラグインログが正しくクライアントコンソールに表示されるよう修正
+- プラグイン自動有効化機能の実装（サーバー起動時）
+- エラーハンドリングの改善
+
+---
+
+## 以前のバージョン
+
+### v1.0.0 - 初期リリース
+- フォルダベースのプラグイン構造
+- package.json サポート
+- モジュール化された型定義
+- 基本的なAPI機能
+
+---
+
+## 📝 注意事項
+
+### 非推奨API
+以下のAPIは非推奨です。代わりに新しいAPIを使用してください：
+
+```javascript
+// 非推奨
+await api.getData('key');
+await api.setData('key', value);
+
+// 推奨
+await api.storage.get('key');
+await api.storage.set('key', value);
+```
+
+### 今後の実装予定
+- `kickPlayer()`: プレイヤーキック機能の完全実装
+- `tellPlayer()`: プレイヤー個別メッセージ送信の完全実装
+- より多くのイベントタイプ
+- プラグイン設定UI
+
+---
+
+## 🤝 貢献
+
+ドキュメントの改善やバグ報告は大歓迎です！
+
+---
+
+**最終更新: 2025年10月1日**
+
 
 ## 🎉 完了した改善
 

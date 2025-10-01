@@ -39,6 +39,7 @@ export interface Server {
   autoRestart?: boolean;
   blockSameIP?: boolean;
   forwardAddress?: string;
+  proxyProtocolV2Enabled?: boolean; // Proxy Protocol v2サポート
   pluginsEnabled?: boolean;
   plugins?: Record<string, any>; // プラグイン設定（プラグインID -> 設定オブジェクト）
   description?: string;
@@ -72,6 +73,7 @@ const DEFAULT_SERVER_FIELDS: Partial<Server> = {
   autoStart: false,
   autoRestart: false,
   blockSameIP: false,
+  proxyProtocolV2Enabled: false,
   pluginsEnabled: false,
   plugins: {},
   players: [],
@@ -274,6 +276,7 @@ export class BedrockProxyAPI {
     address: string;
     destinationAddress: string;
     maxPlayers: number;
+    mode?: "normal" | "proxyOnly";
     iconUrl?: string;
     tags?: string[];
     description?: string;
@@ -301,6 +304,23 @@ export class BedrockProxyAPI {
 
   // サーバー操作（開始/停止/再起動/ブロック）
   public async performServerAction(id: string, action: 'start' | 'stop' | 'restart', targetIP?: string): Promise<Server> {
+    // Implement frontend-side restart as stop -> start sequence to ensure
+    // proxy and process lifecycle are properly handled. Some backends may
+    // not fully reinitialize proxy state on a single 'restart' command.
+    if (action === 'restart') {
+      try {
+        await this.sendRequest<{ success: true }>('servers.action', { id, action: 'stop' }, 30000);
+      } catch (err) {
+        console.warn('performServerAction(restart): stop failed or returned error, continuing to start', err);
+      }
+
+      // allow a short settle period
+      await new Promise((r) => setTimeout(r, 500));
+
+      const startResp = await this.sendRequest<{ server: Server }>('servers.action', { id, action: 'start', targetIP }, 60000);
+      return normalizeServer(startResp.server);
+    }
+
     const response = await this.sendRequest<{ server: Server }>('servers.action', { id, action, targetIP });
     return normalizeServer(response.server);
   }
@@ -551,6 +571,14 @@ export class BedrockProxyAPI {
     console.log(`[API] Disabling plugin ${pluginId} for server ${serverId}`);
     const response = await this.sendRequest<{ plugin: any }>('plugins.disable', { serverId, pluginId });
     console.log(`[API] Plugin disabled:`, response.plugin);
+    return response.plugin;
+  }
+
+  // プラグインリロード
+  public async reloadPlugin(serverId: string, pluginId: string): Promise<any> {
+    console.log(`[API] Reloading plugin ${pluginId} for server ${serverId}`);
+    const response = await this.sendRequest<{ plugin: any }>('plugins.reload', { serverId, pluginId });
+    console.log(`[API] Plugin reloaded:`, response.plugin);
     return response.plugin;
   }
 }

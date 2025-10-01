@@ -94,6 +94,10 @@ export class MessageRouter {
           data = await this.handleDisablePlugin(message.data);
           break;
 
+        case "plugins.reload":
+          data = await this.handleReloadPlugin(message.data);
+          break;
+
         // イベント購読関連
         case "subscribe":
           return this.handleSubscribe(message.data, client);
@@ -304,17 +308,48 @@ export class MessageRouter {
 
   // Graceful stop: request ServerManager to stop all running servers
   public async stopAllServers(): Promise<void> {
+    console.log('🛡️ Stopping all servers before shutdown...');
     try {
       const servers = this.serverManager.getServers();
+      const stopPromises: Promise<void>[] = [];
+      
       for (const s of servers) {
         if (s.status && s.status !== 'offline') {
-          try {
-            await this.serverManager.performServerAction({ id: s.id, action: 'stop' });
-          } catch (e) {
-            console.warn(`⚠️ Failed to stop server ${s.name} during shutdown:`, e);
-          }
+          console.log(`🛑 Stopping server: ${s.name} (${s.id})`);
+          stopPromises.push(
+            this.serverManager.performServerAction({ id: s.id, action: 'stop' })
+              .then(() => {
+                console.log(`✅ Server stopped: ${s.name}`);
+              })
+              .catch((e) => {
+                console.warn(`⚠️ Failed to stop server ${s.name} during shutdown:`, e);
+              })
+          );
         }
       }
+      
+      // Wait for all stop operations to complete (with timeout)
+      await Promise.race([
+        Promise.allSettled(stopPromises),
+        new Promise((resolve) => setTimeout(resolve, 10000)) // 10秒タイムアウト
+      ]);
+      
+      // Force all servers to offline state
+      for (const s of servers) {
+        if (s.status !== 'offline') {
+          console.log(`💾 Force setting ${s.name} to offline`);
+          s.status = 'offline';
+          s.playersOnline = 0;
+          if (s.players) s.players = [];
+        }
+      }
+      
+      // Save final state
+      await this.serverManager.saveServers().catch(e => {
+        console.warn('⚠️ Failed to save server state during shutdown:', e);
+      });
+      
+      console.log('✅ All servers stopped and set to offline');
     } catch (err) {
       console.error('❌ Error while stopping all servers:', err);
     }
@@ -480,6 +515,29 @@ export class MessageRouter {
       return { plugin };
     } catch (error) {
       console.error(`❌ [API] Failed to disable plugin:`, error);
+      throw error;
+    }
+  }
+
+  // プラグインリロード
+  private async handleReloadPlugin(data: { serverId: string; pluginId: string }): Promise<{ plugin: any }> {
+    console.log(`🔄 [API] Reloading plugin ${data.pluginId} for server ${data.serverId}`);
+    
+    if (!data || !data.serverId || !data.pluginId) {
+      throw new APIError("Server ID and Plugin ID are required", "MISSING_DATA", 400);
+    }
+
+    const server = this.serverManager.getServer(data.serverId);
+    if (!server) {
+      throw new APIError(`Server with id ${data.serverId} not found`, "SERVER_NOT_FOUND", 404);
+    }
+
+    try {
+      const plugin = await this.serverManager.reloadPlugin(data.serverId, data.pluginId);
+      console.log(`✅ [API] Reloaded plugin ${data.pluginId}`);
+      return { plugin };
+    } catch (error) {
+      console.error(`❌ [API] Failed to reload plugin:`, error);
       throw error;
     }
   }

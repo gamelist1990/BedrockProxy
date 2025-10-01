@@ -120,6 +120,7 @@ function ServerDetails() {
   const [forwardAddress, setForwardAddress] = useState("");
   const [customForwardAddress, setCustomForwardAddress] = useState("");
   const [blockSameIP, setBlockSameIP] = useState(false);
+  const [proxyProtocolV2Enabled, setProxyProtocolV2Enabled] = useState(false);
   // プレイヤーIP表示設定（プライバシー配慮のためデフォルトは false）
   const [showPlayerIPs, setShowPlayerIPs] = useState(false);
 
@@ -130,6 +131,7 @@ function ServerDetails() {
     autoRestart: false,
     blockSameIP: false,
     forwardAddress: "",
+    proxyProtocolV2Enabled: false,
   });
 
   // Confirmation dialog for unsaved changes
@@ -178,13 +180,39 @@ function ServerDetails() {
 
       // Wait for WebSocket connection to be established
       if (!bedrockProxyAPI.isConnected()) {
-        console.log("Waiting for WebSocket connection...");
-        let attempts = 0;
-        const maxAttempts = 50; // 5 seconds max wait
+        console.log("[ServerDetails] Waiting for WebSocket connection...");
+        
+        // Check if another component is already connecting
+        if ((window as any).__bedrock_connecting) {
+          console.log('[ServerDetails] Another connect in progress — waiting for established');
+          
+          let settled = false;
+          const onEstablished = () => {
+            if (settled) return;
+            settled = true;
+            console.log('[ServerDetails] Connection established event received');
+          };
 
-        while (!bedrockProxyAPI.isConnected() && attempts < maxAttempts) {
-          await new Promise((resolve) => setTimeout(resolve, 100));
-          attempts++;
+          bedrockProxyAPI.on('connection.established', onEstablished as any);
+
+          // Wait up to 8 seconds for connection
+          let attempts = 0;
+          const maxAttempts = 80;
+          while (!bedrockProxyAPI.isConnected() && attempts < maxAttempts) {
+            await new Promise((resolve) => setTimeout(resolve, 100));
+            attempts++;
+          }
+
+          bedrockProxyAPI.off('connection.established', onEstablished as any);
+        } else {
+          // Normal wait for connection
+          let attempts = 0;
+          const maxAttempts = 50; // 5 seconds max wait
+
+          while (!bedrockProxyAPI.isConnected() && attempts < maxAttempts) {
+            await new Promise((resolve) => setTimeout(resolve, 100));
+            attempts++;
+          }
         }
 
         if (!bedrockProxyAPI.isConnected()) {
@@ -228,12 +256,14 @@ function ServerDetails() {
       const initialAutoRestart = data.server.autoRestart ?? false;
       const initialForwardAddress = data.server.forwardAddress ?? "";
       const initialBlockSameIP = data.server.blockSameIP ?? false;
+      const initialProxyProtocolV2Enabled = data.server.proxyProtocolV2Enabled ?? false;
       const initialPluginsEnabled = data.server.pluginsEnabled ?? false;
 
       setAutoStart(initialAutoStart);
       setAutoRestart(initialAutoRestart);
       setForwardAddress(initialForwardAddress);
       setBlockSameIP(initialBlockSameIP);
+      setProxyProtocolV2Enabled(initialProxyProtocolV2Enabled);
       setPluginsEnabled(initialPluginsEnabled);
 
       // Auto-load plugins if plugin tab is active and plugins are enabled
@@ -248,6 +278,7 @@ function ServerDetails() {
         autoRestart: initialAutoRestart,
         blockSameIP: initialBlockSameIP,
         forwardAddress: initialForwardAddress,
+        proxyProtocolV2Enabled: initialProxyProtocolV2Enabled,
       });
       setHasUnsavedOperations(false);
 
@@ -269,16 +300,8 @@ function ServerDetails() {
         }
 
         const consoleData = await bedrockProxyAPI.getServerConsole(id);
-        // backend が返すメッセージがプレースホルダの場合は翻訳キーに置き換える
-        if (
-          consoleData.lines &&
-          consoleData.lines.length === 1 &&
-          /no server process running/i.test(consoleData.lines[0])
-        ) {
-          setConsoleLines([t("console.unavailable")]);
-        } else {
-          setConsoleLines(consoleData.lines);
-        }
+        // Proxy Onlyモードの場合はUDPプロキシのログが表示される
+        setConsoleLines(consoleData.lines);
       } catch (err) {
         console.error("Failed to load console:", err);
         setConsoleLines([t("console.output")]);
@@ -306,6 +329,8 @@ function ServerDetails() {
           setAutoRestart(data.server.autoRestart);
         if (data.server.blockSameIP !== undefined)
           setBlockSameIP(data.server.blockSameIP);
+        if (data.server.proxyProtocolV2Enabled !== undefined)
+          setProxyProtocolV2Enabled(data.server.proxyProtocolV2Enabled);
         if (data.server.forwardAddress !== undefined)
           setForwardAddress(data.server.forwardAddress);
       }
@@ -325,6 +350,8 @@ function ServerDetails() {
             setAutoRestart(data.server.autoRestart);
           if (data.server.blockSameIP !== undefined)
             setBlockSameIP(data.server.blockSameIP);
+          if (data.server.proxyProtocolV2Enabled !== undefined)
+            setProxyProtocolV2Enabled(data.server.proxyProtocolV2Enabled);
           if (data.server.forwardAddress !== undefined)
             setForwardAddress(data.server.forwardAddress);
         }
@@ -467,12 +494,35 @@ function ServerDetails() {
       try {
         // WebSocket接続確認
         if (!bedrockProxyAPI.isConnected()) {
-          const maxAttempts = 30; // 3秒
-          let attempts = 0;
-          while (!bedrockProxyAPI.isConnected() && attempts < maxAttempts) {
-            await new Promise((resolve) => setTimeout(resolve, 100));
-            attempts++;
+          console.log('[ServerDetails] Waiting for connection before subscribing...');
+          
+          // Check if another component is connecting
+          if ((window as any).__bedrock_connecting) {
+            let settled = false;
+            const onEstablished = () => {
+              if (settled) return;
+              settled = true;
+            };
+
+            bedrockProxyAPI.on('connection.established', onEstablished as any);
+
+            const maxAttempts = 50;
+            let attempts = 0;
+            while (!bedrockProxyAPI.isConnected() && attempts < maxAttempts) {
+              await new Promise((resolve) => setTimeout(resolve, 100));
+              attempts++;
+            }
+
+            bedrockProxyAPI.off('connection.established', onEstablished as any);
+          } else {
+            const maxAttempts = 30; // 3秒
+            let attempts = 0;
+            while (!bedrockProxyAPI.isConnected() && attempts < maxAttempts) {
+              await new Promise((resolve) => setTimeout(resolve, 100));
+              attempts++;
+            }
           }
+          
           if (!bedrockProxyAPI.isConnected()) {
             console.error("❌ WebSocket not connected for subscription");
             return;
@@ -589,6 +639,29 @@ function ServerDetails() {
   // サーバー操作
   const handleServerAction = async (action: "start" | "stop" | "restart") => {
     try {
+      // サーバー起動前にポート重複チェック
+      if (action === "start" || action === "restart") {
+        // 親コンポーネントからserversリストを取得する必要がある
+        // ここでは簡易的にローカルチェックを行う
+        const response = await bedrockProxyAPI.getServers();
+        const runningServers = response.filter(s =>
+          s.status === "online" || s.status === "starting"
+        );
+
+        // 同じアドレス（受信ポート）を使っているサーバーを探す
+        const conflictingServers = runningServers.filter(s =>
+          s.id !== server.id && s.address === server.address
+        );
+
+        if (conflictingServers.length > 0) {
+          const serverNames = [server.name, ...conflictingServers.map(s => s.name)].join(", ");
+          setSnackbarMessage(`${serverNames} の受信ポートが重複しているため起動できません`);
+          setSnackbarSeverity("error");
+          setSnackbarOpen(true);
+          return;
+        }
+      }
+
       // WebSocket接続確認
       if (!bedrockProxyAPI.isConnected()) {
         const maxAttempts = 30; // 3秒
@@ -651,6 +724,9 @@ function ServerDetails() {
       case "blockSameIP":
         setBlockSameIP(value);
         break;
+      case "proxyProtocolV2Enabled":
+        setProxyProtocolV2Enabled(value);
+        break;
       case "forwardAddress":
         setForwardAddress(value);
         break;
@@ -660,19 +736,24 @@ function ServerDetails() {
   // Save operations settings
   const handleSaveOperations = async () => {
     try {
-      await bedrockProxyAPI.updateServer(server.id, {
+      const updatedServer = await bedrockProxyAPI.updateServer(server.id, {
         autoStart,
         autoRestart,
         blockSameIP,
+        proxyProtocolV2Enabled,
         forwardAddress:
           forwardAddress === "custom" ? customForwardAddress : forwardAddress,
       });
+
+      // 即座にローカルステートを更新
+      setServer(updatedServer);
 
       setSavedOperationsState({
         autoStart,
         autoRestart,
         blockSameIP,
         forwardAddress,
+        proxyProtocolV2Enabled,
       });
       setHasUnsavedOperations(false);
 
@@ -725,16 +806,39 @@ function ServerDetails() {
         systemInfo.pluginsDirectory
       );
 
-      // Load plugins from backend
+      // Load plugins from backend (perform a refresh/rescan)
       console.log(
-        "[Plugin Auto-Load] Loading plugins for server:",
+        "[Plugin Auto-Load] Triggering backend plugin load for server:",
         server.id
       );
       const loadedPlugins = await bedrockProxyAPI.loadPlugins(server.id);
-      console.log("[Plugin Auto-Load] Loaded plugins:", loadedPlugins);
+      console.log("[Plugin Auto-Load] plugins.load returned:", loadedPlugins);
+
+      // To ensure we reflect any persisted/merged metadata the server may have,
+      // fetch the authoritative plugin list immediately after load.
+      let authoritativePlugins = loadedPlugins;
+      try {
+        const fetched = await bedrockProxyAPI.getPlugins(server.id);
+        console.log("[Plugin Auto-Load] plugins.getAll returned:", fetched);
+        if (Array.isArray(fetched) && fetched.length >= 0) {
+          authoritativePlugins = fetched;
+        }
+      } catch (e) {
+        console.warn('[Plugin Auto-Load] Failed to fetch authoritative plugin list, using load result', e);
+      }
 
       // Update state so plugins display in UI
-      setPlugins(loadedPlugins);
+      setPlugins(authoritativePlugins);
+
+      // If any plugin is enabled in the loaded list, reflect that in the global pluginsEnabled state
+      try {
+        const anyEnabled = loadedPlugins.some((p: any) => !!p.enabled);
+        if (anyEnabled) {
+          setPluginsEnabled(true);
+        }
+      } catch (e) {
+        // ignore UI merge errors
+      }
 
       if (showMessages) {
         setSnackbarMessage(
@@ -1394,7 +1498,7 @@ function ServerDetails() {
                     />
                     <Chip
                       label={
-                        server.status === "online" ? "ライブ" : "オフライン"
+                        server.status === "online" ? "ライブ" : t("server.status.offline")
                       }
                       color={server.status === "online" ? "success" : "default"}
                       size="small"
@@ -1415,16 +1519,22 @@ function ServerDetails() {
                   server.status !== "online" && (
                     <Alert severity="warning" sx={{ mb: 2 }}>
                       {(server as any).lastExit.code !== null
-                        ? `プロセスは終了しました（exit code: ${
-                            (server as any).lastExit.code
-                          }） - ${new Date(
-                            (server as any).lastExit.time
-                          ).toLocaleString()}`
-                        : `プロセスは終了しました（signal: ${
-                            (server as any).lastExit.signal
-                          }） - ${new Date(
-                            (server as any).lastExit.time
-                          ).toLocaleString()}`}
+                        ? t("console.processExitedExit")
+                            .replace("{code}", (server as any).lastExit.code)
+                            .replace(
+                              "{time}",
+                              new Date(
+                                (server as any).lastExit.time
+                              ).toLocaleString()
+                            )
+                        : t("console.processExitedSignal")
+                            .replace("{signal}", (server as any).lastExit.signal)
+                            .replace(
+                              "{time}",
+                              new Date(
+                                (server as any).lastExit.time
+                              ).toLocaleString()
+                            )}
                     </Alert>
                   )}
 
@@ -1434,7 +1544,7 @@ function ServerDetails() {
                   server.status !== "online" && (
                     <Box sx={{ mb: 2 }}>
                       <Typography variant="caption" color="text.secondary">
-                        直近のコンソール出力（デバッグ用）
+                        {t("console.recentDebugHeader")}
                       </Typography>
                       <Box
                         sx={{
@@ -1551,7 +1661,7 @@ function ServerDetails() {
 
                 {server.status !== "online" && (
                   <Alert severity="info" sx={{ mt: 2 }}>
-                    コンソール機能を使用するにはサーバーをオンラインにしてください
+                    {t("console.useServerOnline")}
                   </Alert>
                 )}
               </Stack>
@@ -1691,6 +1801,30 @@ function ServerDetails() {
                           </Typography>
                           <Typography variant="caption" className="muted">
                             {t("operations.blockSameIPDesc")}
+                          </Typography>
+                        </Box>
+                      }
+                    />
+                    <FormControlLabel
+                      control={
+                        <Switch
+                          checked={proxyProtocolV2Enabled}
+                          onChange={(e) => {
+                            handleOperationChange(
+                              "proxyProtocolV2Enabled",
+                              e.target.checked
+                            );
+                          }}
+                          color="primary"
+                        />
+                      }
+                      label={
+                        <Box>
+                          <Typography variant="body2">
+                            {t("overview.proxyProtocolV2")}
+                          </Typography>
+                          <Typography variant="caption" className="muted">
+                            {t("overview.proxyProtocolV2Desc")}
                           </Typography>
                         </Box>
                       }
@@ -1952,12 +2086,60 @@ function ServerDetails() {
                               </Box>
                               <Switch
                                 checked={plugin.enabled || false}
-                                onChange={(e) => {
+                                // Stop propagation on various events to ensure card onClick is not triggered
+                                onClick={(e) => e.stopPropagation()}
+                                onMouseDown={(e) => e.stopPropagation()}
+                                onChange={async (e) => {
                                   e.stopPropagation(); // Prevent card click when toggling switch
-                                  // TODO: Toggle plugin enabled state
+                                  // Toggle plugin enabled state locally (optimistic)
+                                  const checked = (e.target as HTMLInputElement).checked;
                                   const updated = [...plugins];
-                                  updated[index].enabled = e.target.checked;
+                                  const previous = { ...updated[index] };
+                                  updated[index] = { ...updated[index], enabled: checked };
                                   setPlugins(updated);
+
+                                  try {
+                                    if (checked) {
+                                      // If plugin system is currently disabled, enable it and persist
+                                      if (!pluginsEnabled) {
+                                        setPluginsEnabled(true);
+                                        try {
+                                          await bedrockProxyAPI.updateServer(server.id, {
+                                            pluginsEnabled: true,
+                                          });
+                                        } catch (persistErr) {
+                                          console.warn('Failed to persist pluginsEnabled=true when enabling a plugin:', persistErr);
+                                        }
+                                      }
+
+                                      await bedrockProxyAPI.enablePlugin(server.id, updated[index].id);
+                                      setSnackbarMessage(
+                                        t('plugins.enableSuccess') || 'プラグインを有効化しました'
+                                      );
+                                      setSnackbarSeverity('success');
+                                      setSnackbarOpen(true);
+                                    } else {
+                                      await bedrockProxyAPI.disablePlugin(server.id, updated[index].id);
+                                      setSnackbarMessage(
+                                        t('plugins.disableSuccess') || 'プラグインを無効化しました'
+                                      );
+                                      setSnackbarSeverity('success');
+                                      setSnackbarOpen(true);
+                                    }
+                                  } catch (err) {
+                                    console.error('❌ Failed to toggle plugin:', err);
+                                    // rollback
+                                    const rolled = [...plugins];
+                                    rolled[index] = previous;
+                                    setPlugins(rolled);
+                                    setSnackbarMessage(
+                                      checked
+                                        ? t('plugins.enableError') || 'プラグインの有効化に失敗しました'
+                                        : t('plugins.disableError') || 'プラグインの無効化に失敗しました'
+                                    );
+                                    setSnackbarSeverity('error');
+                                    setSnackbarOpen(true);
+                                  }
                                 }}
                                 color="primary"
                               />
@@ -2047,7 +2229,7 @@ function ServerDetails() {
             <Stack spacing={3}>
               {/* Basic Info */}
               <Box>
-                <Typography variant="h6" gutterBottom>
+                <Typography variant="subtitle1" fontWeight="bold" gutterBottom>
                   {t("plugins.basicInfo") || "基本情報"}
                 </Typography>
                 <Stack spacing={2}>
@@ -2099,7 +2281,7 @@ function ServerDetails() {
               {/* Description */}
               {selectedPlugin.metadata?.description && (
                 <Box>
-                  <Typography variant="h6" gutterBottom>
+                  <Typography variant="subtitle1" fontWeight="bold" gutterBottom>
                     {t("plugins.description") || "説明"}
                   </Typography>
                   <Typography variant="body1">
@@ -2110,7 +2292,7 @@ function ServerDetails() {
 
               {/* Technical Details */}
               <Box>
-                <Typography variant="h6" gutterBottom>
+                <Typography variant="subtitle1" fontWeight="bold" gutterBottom>
                   {t("plugins.technicalDetails") || "技術詳細"}
                 </Typography>
                 <Stack spacing={2}>
@@ -2178,7 +2360,7 @@ function ServerDetails() {
                 Object.keys(selectedPlugin.metadata.dependencies).length >
                   0 && (
                   <Box>
-                    <Typography variant="h6" gutterBottom>
+                    <Typography variant="subtitle1" fontWeight="bold" gutterBottom>
                       {t("plugins.dependencies") || "依存関係"}
                     </Typography>
                     <Stack direction="row" spacing={1} flexWrap="wrap">
@@ -2200,7 +2382,7 @@ function ServerDetails() {
               {selectedPlugin.metadata?.keywords &&
                 selectedPlugin.metadata.keywords.length > 0 && (
                   <Box>
-                    <Typography variant="h6" gutterBottom>
+                    <Typography variant="subtitle1" fontWeight="bold" gutterBottom>
                       {t("plugins.keywords") || "キーワード"}
                     </Typography>
                     <Stack direction="row" spacing={1} flexWrap="wrap">
@@ -2223,7 +2405,7 @@ function ServerDetails() {
               {(selectedPlugin.metadata?.homepage ||
                 selectedPlugin.metadata?.minBedrockProxyVersion) && (
                 <Box>
-                  <Typography variant="h6" gutterBottom>
+                  <Typography variant="subtitle1" fontWeight="bold" gutterBottom>
                     {t("plugins.additionalInfo") || "追加情報"}
                   </Typography>
                   <Stack spacing={1}>
@@ -2270,6 +2452,41 @@ function ServerDetails() {
           )}
         </DialogContent>
         <DialogActions>
+          <Button
+            onClick={async () => {
+              if (!selectedPlugin || !server?.id) return;
+
+              try {
+                setLoadingPlugins(true);
+                await bedrockProxyAPI.reloadPlugin(server.id, selectedPlugin.id);
+                // Reload plugin list to reflect changes
+                await loadPluginsData(false);
+                setSnackbarMessage(
+                  t("plugins.reloaded") || "プラグインをリロードしました"
+                );
+                setSnackbarSeverity("success");
+                setSnackbarOpen(true);
+              } catch (error) {
+                console.error("Failed to reload plugin:", error);
+                setSnackbarMessage(
+                  t("plugins.reloadFailed") || "プラグインのリロードに失敗しました"
+                );
+                setSnackbarSeverity("error");
+                setSnackbarOpen(true);
+              } finally {
+                setLoadingPlugins(false);
+              }
+            }}
+            disabled={loadingPlugins}
+            color="primary"
+            variant="contained"
+          >
+            {loadingPlugins ? (
+              <CircularProgress size={20} />
+            ) : (
+              t("plugins.reload") || "更新"
+            )}
+          </Button>
           <Button onClick={() => setPluginDetailsOpen(false)}>
             {t("common.close") || "閉じる"}
           </Button>

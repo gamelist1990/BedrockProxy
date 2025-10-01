@@ -1,0 +1,11 @@
+{
+  "name": "auto-announcer",
+  "version": "1.0.0",
+  "description": "サーバーに定期的なアナウンスメッセージを自動送信するプラグイン",
+  "main": "index.js",
+  "author": "BedrockProxy Team",
+  "license": "MIT",
+  "bedrockproxy": {
+    "minVersion": "1.0.0"
+  }
+}

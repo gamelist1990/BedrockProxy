@@ -210,14 +210,15 @@ export class ConnectionManager {
       // 購読チェック
       try {
         // INFO: 出力することで、どのクライアントがどのイベントを購読しているかを確認する
-        logger.info('broadcast.debug', `Client subscriptions for broadcast check`, { subscriptions: Array.from(client.subscriptions) }, client.id);
+        // Use console.debug here to avoid invoking logger.broadcaster recursively
+        console.debug('[broadcast.debug]', client.id, 'Client subscriptions for broadcast check', { subscriptions: Array.from(client.subscriptions) });
       } catch (e) {
         // noop
       }
 
       if (!client.subscriptions.has(message.event) && !client.subscriptions.has("*")) {
         // Log which client caused the skip for easier debugging
-        logger.info('broadcast', `Skipping client for event (not subscribed)`, { event: message.event, subscriptions: Array.from(client.subscriptions) }, client.id);
+        console.debug('[broadcast] Skipping client for event (not subscribed)', client.id, { event: message.event, subscriptions: Array.from(client.subscriptions) });
         skipped++;
         continue;
       }
@@ -226,7 +227,8 @@ export class ConnectionManager {
         client.ws.send(messageStr);
         sent++;
       } catch (error) {
-        logger.error('broadcast', `Error broadcasting to subscriber`, { error }, client.id);
+        // Avoid logger to prevent recursion from logger.broadcaster
+        console.error('[broadcast] Error broadcasting to subscriber', client.id, { error });
         failedClients.push(client.id);
         failed++;
       }
@@ -235,11 +237,12 @@ export class ConnectionManager {
     // 失敗したクライアントを削除
     failedClients.forEach(clientId => this.removeClient(clientId));
 
-    logger.info('broadcast', `Broadcasted event to subscribers`, { 
-      event: message.event, 
-      sent, 
-      failed, 
-      skipped 
+    // Use console.info to avoid recursive logger.broadcaster calls
+    console.info('[broadcast] Broadcasted event to subscribers', {
+      event: message.event,
+      sent,
+      failed,
+      skipped
     });
     return { sent, failed, skipped };
   }

@@ -1,8 +1,42 @@
 /**
- * BedrockProxy Plugin API Type Definitions
+ * BedrockProxy プラグイン API 型定義
  * 
- * This module provides type definitions for creating plugins for BedrockProxy.
- * Plugins allow extending the functionality of BedrockProxy servers with custom JavaScript code.
+ * このモジュールは、BedrockProxy のプラグインを作成するための型定義を提供します。
+ * プラグインを使用することで、カスタム JavaScript コードで BedrockProxy サーバーの
+ * 機能を拡張できます。
+ * 
+ * @module BedrockProxyPluginAPI
+ * @version 2.0.0
+ * 
+ * @example プラグインの基本構造
+ * ```javascript
+ * // index.js
+ * let api;
+ * 
+ * async function onLoad(context) {
+ *   api = context.api;
+ *   api.info('プラグインがロードされました');
+ * }
+ * 
+ * async function onEnable() {
+ *   api.info('プラグインが有効化されました');
+ *   
+ *   api.on('playerJoin', (event) => {
+ *     api.broadcast(`${event.player.name} さんが参加しました！`);
+ *   });
+ * }
+ * 
+ * async function onDisable() {
+ *   api.info('プラグインが無効化されました');
+ * }
+ * 
+ * module.exports = { onLoad, onEnable, onDisable };
+ * ```
+ * 
+ * @see {@link ./README.md} 詳細なドキュメントとサンプルコード
+ * @see {@link ./examples/simple-welcome} シンプルなウェルカムボットのサンプル
+ * @see {@link ./examples/auto-backup} 自動バックアッププラグインのサンプル
+ * @see {@link ./examples/sample-plugin} 高度な機能を使用したサンプル
  */
 
 /**

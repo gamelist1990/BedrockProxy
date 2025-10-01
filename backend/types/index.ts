@@ -54,6 +54,7 @@ export interface Server {
   autoRestart?: boolean;
   blockSameIP?: boolean;
   forwardAddress?: string; // バックアップ転送サーバー
+  proxyProtocolV2Enabled?: boolean; // Proxy Protocol v2サポートを有効化
   pluginsEnabled?: boolean; // プラグインシステムの有効/無効
   plugins?: Record<string, any>; // プラグイン設定（プラグインID -> 設定オブジェクト）
   description?: string;
@@ -112,6 +113,7 @@ export namespace ServerAPI {
     autoRestart?: boolean;
     blockSameIP?: boolean;
     forwardAddress?: string;
+    proxyProtocolV2Enabled?: boolean; // Proxy Protocol v2サポートを有効化
     pluginsEnabled?: boolean;
     executablePath?: string; // サーバー実行ファイルのパス (Not required for proxyOnly)
     serverDirectory?: string; // サーバーディレクトリのパス

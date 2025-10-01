@@ -8,6 +8,7 @@ import type {
 } from "./types/index.js";
 import { MessageRouter } from "./handlers/messageRouter.js";
 import { ConnectionManager } from "./services/connectionManager.js";
+import { logger } from "./services/logger.js";
 
 export class WebSocketServer {
   private connectionManager: ConnectionManager;
@@ -31,6 +32,40 @@ export class WebSocketServer {
         data,
         timestamp: Date.now(),
       });
+    });
+
+    // Logger のブロードキャスターを設定して、ログを console.output イベントとして配信する
+    // プラグインからのログは category にプラグイン名が入るため、それをメッセージ先頭に付与する
+    logger.setBroadcaster((entry) => {
+      try {
+        const linePrefix = entry.category ? `[${entry.category}] ` : '';
+        const lineData = entry.data && typeof entry.data === 'object'
+          ? `${JSON.stringify(entry.data)}`
+          : entry.data !== undefined
+            ? String(entry.data)
+            : '';
+
+        const line = `${linePrefix}${entry.message}${lineData ? ' ' + lineData : ''}`;
+
+        this.connectionManager.broadcastToSubscribers({
+          type: "event",
+          event: "console.output",
+          data: {
+            // include the composed human-readable line for UI display
+            line,
+            // also include structured fields so clients can filter or display richer info
+            category: entry.category,
+            level: entry.level,
+            message: entry.message,
+            data: entry.data,
+            timestamp: entry.timestamp ? (entry.timestamp as Date).toISOString() : new Date().toISOString()
+          },
+          timestamp: Date.now(),
+        });
+      } catch (e) {
+        // ignore broadcaster errors
+        try { console.warn('Failed to broadcast log entry:', e); } catch { /* noop */ }
+      }
     });
   }
 
