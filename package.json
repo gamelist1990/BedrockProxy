@@ -9,7 +9,8 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.55.1",
-    "@types/bun": "latest"
+    "@types/bun": "latest",
+    "typescript": "^5.9.3"
   },
   "peerDependencies": {
     "typescript": "^5.0.0"

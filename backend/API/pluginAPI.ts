@@ -86,7 +86,17 @@ export class PluginAPI {
   // ==================== Logging ====================
   
   log(level: LogLevel, message: string, data?: any): void {
+    const formattedMessage = `[${this.pluginName}]: ${message}`;
     logger[level](this.pluginName, message, data);
+    
+    // Also broadcast to clients via console.output event with plugin name prefix
+    try {
+      if (this.serverManager && typeof this.serverManager.broadcastConsoleOutput === 'function') {
+        this.serverManager.broadcastConsoleOutput(this.serverId, formattedMessage);
+      }
+    } catch (err) {
+      // Ignore broadcast errors to avoid infinite loops
+    }
   }
   
   debug(message: string, data?: any): void {
@@ -141,14 +151,32 @@ export class PluginAPI {
   }
   
   async sendCommand(command: string): Promise<void> {
-    // This would send command to Minecraft server console
+    // Delegate to ServerManager to send a console command to the server
     this.info(`Sending command: ${command}`);
-    // TODO: Implement actual command sending through MinecraftServerManager
+    try {
+      if (!this.serverManager || typeof this.serverManager.sendConsoleCommand !== 'function') {
+        this.warn('ServerManager does not support sendConsoleCommand');
+        return;
+      }
+      this.serverManager.sendConsoleCommand(this.serverId, command);
+    } catch (err) {
+      this.error('Failed to send command', err);
+      throw err;
+    }
   }
   
   async getConsoleOutput(lineCount: number = 100): Promise<string[]> {
-    // TODO: Implement console output buffering
-    return [];
+    try {
+      if (!this.serverManager || typeof this.serverManager.getServerConsoleOutput !== 'function') {
+        this.warn('ServerManager does not support getServerConsoleOutput');
+        return [];
+      }
+      const lines = this.serverManager.getServerConsoleOutput(this.serverId, lineCount);
+      return Array.isArray(lines) ? lines : [];
+    } catch (err) {
+      this.error('Failed to get console output', err);
+      return [];
+    }
   }
   
   // ==================== Players ====================
@@ -213,7 +241,24 @@ export class PluginAPI {
   
   async broadcast(message: string): Promise<void> {
     this.info(`Broadcasting: ${message}`);
-    // TODO: Implement actual broadcast through MinecraftServerManager
+    try {
+      // Prefer a dedicated broadcast if ServerManager exposes one
+      if (this.serverManager && typeof this.serverManager.broadcast === 'function') {
+        await this.serverManager.broadcast(this.serverId, message);
+        return;
+      }
+
+      // Fallback: send a server console "say" command so players see the message
+      if (this.serverManager && typeof this.serverManager.sendConsoleCommand === 'function') {
+        this.serverManager.sendConsoleCommand(this.serverId, `say ${message}`);
+        return;
+      }
+
+      this.warn('No broadcast method available on ServerManager');
+    } catch (err) {
+      this.error('Failed to broadcast message', err);
+      throw err;
+    }
   }
   
   // ==================== Events ====================
@@ -319,18 +364,75 @@ export class PluginAPI {
   }
   
   isPluginLoaded(pluginName: string): boolean {
-    // TODO: Implement plugin registry check
-    return false;
+    try {
+      // Try to find plugin by id or metadata.name
+      if (!this.serverManager) return false;
+      const plugins = typeof this.serverManager.getPlugins === 'function'
+        ? this.serverManager.getPlugins(this.serverId)
+        : [];
+
+      for (const p of plugins) {
+        if (!p) continue;
+        const name = p.id || p.metadata?.name;
+        if (p.id === pluginName || p.metadata?.name === pluginName) {
+          return !!p.loaded;
+        }
+      }
+      return false;
+    } catch (err) {
+      this.error('isPluginLoaded check failed', err);
+      return false;
+    }
   }
   
   getLoadedPlugins(): string[] {
-    // TODO: Implement plugin registry
-    return [];
+    try {
+      if (!this.serverManager || typeof this.serverManager.getPlugins !== 'function') return [];
+      const plugins = this.serverManager.getPlugins(this.serverId) || [];
+      return plugins.filter((p: any) => p && p.loaded).map((p: any) => p.metadata?.name || p.id);
+    } catch (err) {
+      this.error('getLoadedPlugins failed', err);
+      return [];
+    }
   }
   
   async callPlugin(pluginName: string, functionName: string, ...args: any[]): Promise<any> {
-    // TODO: Implement inter-plugin communication
-    throw new Error('Inter-plugin communication not yet implemented');
+    try {
+      if (!this.serverManager) {
+        throw new Error('ServerManager not available');
+      }
+
+      // Try to access the PluginLoader via ServerManager (private helper may exist)
+      const loader = (this.serverManager as any).getPluginLoader
+        ? (this.serverManager as any).getPluginLoader(this.serverId)
+        : (this.serverManager as any).pluginLoaders && (this.serverManager as any).pluginLoaders.get(this.serverId);
+
+      if (!loader) {
+        throw new Error('PluginLoader not available for server');
+      }
+
+      // Find plugin by id or metadata.name
+      const plugins = typeof loader.getPlugins === 'function' ? loader.getPlugins() : [];
+      const target = plugins.find((p: any) => p && (p.id === pluginName || p.metadata?.name === pluginName));
+      if (!target) throw new Error(`Plugin not found: ${pluginName}`);
+
+      const pluginId = target.id;
+
+      // Try to access the plugin instance context (stored internally on loader)
+      const pluginContexts = (loader as any).pluginContexts;
+      const instance = pluginContexts && pluginContexts.get ? pluginContexts.get(pluginId) : undefined;
+
+      if (!instance) throw new Error(`Plugin instance not available: ${pluginName}`);
+
+      const fn = instance[functionName];
+      if (typeof fn !== 'function') throw new Error(`Function ${functionName} not found on plugin ${pluginName}`);
+
+      // Call the function and return result (support async)
+      return await fn.apply(instance, args);
+    } catch (err) {
+      this.error('callPlugin failed', err);
+      throw err;
+    }
   }
   
   // ==================== Cleanup ====================

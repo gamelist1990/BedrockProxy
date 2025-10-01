@@ -272,9 +272,23 @@ export class PluginLoader {
       const func = new Function(...Object.keys(pluginContext), code);
       func(...Object.values(pluginContext));
       
+      // Create full context for lifecycle callbacks
+      const lifecycleContext = {
+        api,
+        serverId: this.serverId,
+        metadata: plugin.metadata,
+        pluginDir: plugin.pluginPath || dirname(plugin.filePath),
+        dataDir: join(this.storageDir, pluginId)
+      };
+      
+      // Call onLoad if it exists
+      if (pluginInstance && pluginInstance.onLoad) {
+        await pluginInstance.onLoad(lifecycleContext);
+      }
+      
       // Call onEnable if it exists
       if (pluginInstance && pluginInstance.onEnable) {
-        await pluginInstance.onEnable({ api, serverId: this.serverId });
+        await pluginInstance.onEnable(lifecycleContext);
       }
       
       this.pluginContexts.set(pluginId, pluginInstance);
@@ -298,30 +312,48 @@ export class PluginLoader {
       throw new Error(`Plugin ${pluginId} not found`);
     }
 
-    try {
-      // Call onDisable if it exists
-      const pluginInstance = this.pluginContexts.get(pluginId);
-      if (pluginInstance && pluginInstance.onDisable) {
-        await pluginInstance.onDisable();
+    // Attempt graceful disable. Any errors from plugin code or cleanup
+    // should be captured and logged, but we want to ensure the loader
+    // state is consistent and return the plugin object rather than
+    // throwing an unhandled exception which produces INTERNAL_ERROR to clients.
+    const pluginInstance = this.pluginContexts.get(pluginId);
+    const api = this.pluginAPIs.get(pluginId);
+    
+    if (pluginInstance && pluginInstance.onDisable) {
+      try {
+        const lifecycleContext = {
+          api,
+          serverId: this.serverId,
+          metadata: plugin.metadata,
+          pluginDir: plugin.pluginPath || dirname(plugin.filePath),
+          dataDir: join(this.storageDir, pluginId)
+        };
+        await pluginInstance.onDisable(lifecycleContext);
+      } catch (err) {
+        console.error(`❌ Error in plugin.onDisable for ${pluginId}:`, err);
+        // Record plugin-level error for UI/inspection
+        plugin.error = String(err);
       }
-      
-      // Cleanup API resources
-      const api = this.pluginAPIs.get(pluginId);
-      if (api) {
-        api.cleanup();
-        this.pluginAPIs.delete(pluginId);
-      }
-      
-      this.pluginContexts.delete(pluginId);
-      plugin.enabled = false;
-      this.plugins.set(pluginId, plugin);
-
-      console.log(`✅ Plugin ${plugin.metadata.name} disabled`);
-      return plugin;
-    } catch (error) {
-      console.error(`❌ Failed to disable plugin ${pluginId}:`, error);
-      throw error;
     }
+
+    // Cleanup API resources
+    if (api) {
+      try {
+        api.cleanup();
+      } catch (err) {
+        console.error(`❌ Error during PluginAPI.cleanup for ${pluginId}:`, err);
+        plugin.error = plugin.error ? plugin.error + '\n' + String(err) : String(err);
+      }
+      this.pluginAPIs.delete(pluginId);
+    }
+
+    // Finalize loader state
+    this.pluginContexts.delete(pluginId);
+    plugin.enabled = false;
+    this.plugins.set(pluginId, plugin);
+
+    console.log(`✅ Plugin ${plugin.metadata.name} disabled` + (plugin.error ? ` (with error)` : ''));
+    return plugin;
   }
 
   /**

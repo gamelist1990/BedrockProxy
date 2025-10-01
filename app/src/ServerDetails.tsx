@@ -725,16 +725,39 @@ function ServerDetails() {
         systemInfo.pluginsDirectory
       );
 
-      // Load plugins from backend
+      // Load plugins from backend (perform a refresh/rescan)
       console.log(
-        "[Plugin Auto-Load] Loading plugins for server:",
+        "[Plugin Auto-Load] Triggering backend plugin load for server:",
         server.id
       );
       const loadedPlugins = await bedrockProxyAPI.loadPlugins(server.id);
-      console.log("[Plugin Auto-Load] Loaded plugins:", loadedPlugins);
+      console.log("[Plugin Auto-Load] plugins.load returned:", loadedPlugins);
+
+      // To ensure we reflect any persisted/merged metadata the server may have,
+      // fetch the authoritative plugin list immediately after load.
+      let authoritativePlugins = loadedPlugins;
+      try {
+        const fetched = await bedrockProxyAPI.getPlugins(server.id);
+        console.log("[Plugin Auto-Load] plugins.getAll returned:", fetched);
+        if (Array.isArray(fetched) && fetched.length >= 0) {
+          authoritativePlugins = fetched;
+        }
+      } catch (e) {
+        console.warn('[Plugin Auto-Load] Failed to fetch authoritative plugin list, using load result', e);
+      }
 
       // Update state so plugins display in UI
-      setPlugins(loadedPlugins);
+      setPlugins(authoritativePlugins);
+
+      // If any plugin is enabled in the loaded list, reflect that in the global pluginsEnabled state
+      try {
+        const anyEnabled = loadedPlugins.some((p: any) => !!p.enabled);
+        if (anyEnabled) {
+          setPluginsEnabled(true);
+        }
+      } catch (e) {
+        // ignore UI merge errors
+      }
 
       if (showMessages) {
         setSnackbarMessage(
@@ -1952,12 +1975,60 @@ function ServerDetails() {
                               </Box>
                               <Switch
                                 checked={plugin.enabled || false}
-                                onChange={(e) => {
+                                // Stop propagation on various events to ensure card onClick is not triggered
+                                onClick={(e) => e.stopPropagation()}
+                                onMouseDown={(e) => e.stopPropagation()}
+                                onChange={async (e) => {
                                   e.stopPropagation(); // Prevent card click when toggling switch
-                                  // TODO: Toggle plugin enabled state
+                                  // Toggle plugin enabled state locally (optimistic)
+                                  const checked = (e.target as HTMLInputElement).checked;
                                   const updated = [...plugins];
-                                  updated[index].enabled = e.target.checked;
+                                  const previous = { ...updated[index] };
+                                  updated[index] = { ...updated[index], enabled: checked };
                                   setPlugins(updated);
+
+                                  try {
+                                    if (checked) {
+                                      // If plugin system is currently disabled, enable it and persist
+                                      if (!pluginsEnabled) {
+                                        setPluginsEnabled(true);
+                                        try {
+                                          await bedrockProxyAPI.updateServer(server.id, {
+                                            pluginsEnabled: true,
+                                          });
+                                        } catch (persistErr) {
+                                          console.warn('Failed to persist pluginsEnabled=true when enabling a plugin:', persistErr);
+                                        }
+                                      }
+
+                                      await bedrockProxyAPI.enablePlugin(server.id, updated[index].id);
+                                      setSnackbarMessage(
+                                        t('plugins.enableSuccess') || 'プラグインを有効化しました'
+                                      );
+                                      setSnackbarSeverity('success');
+                                      setSnackbarOpen(true);
+                                    } else {
+                                      await bedrockProxyAPI.disablePlugin(server.id, updated[index].id);
+                                      setSnackbarMessage(
+                                        t('plugins.disableSuccess') || 'プラグインを無効化しました'
+                                      );
+                                      setSnackbarSeverity('success');
+                                      setSnackbarOpen(true);
+                                    }
+                                  } catch (err) {
+                                    console.error('❌ Failed to toggle plugin:', err);
+                                    // rollback
+                                    const rolled = [...plugins];
+                                    rolled[index] = previous;
+                                    setPlugins(rolled);
+                                    setSnackbarMessage(
+                                      checked
+                                        ? t('plugins.enableError') || 'プラグインの有効化に失敗しました'
+                                        : t('plugins.disableError') || 'プラグインの無効化に失敗しました'
+                                    );
+                                    setSnackbarSeverity('error');
+                                    setSnackbarOpen(true);
+                                  }
                                 }}
                                 color="primary"
                               />

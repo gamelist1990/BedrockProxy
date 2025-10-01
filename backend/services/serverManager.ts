@@ -108,11 +108,15 @@ export class ServerManager {
       this.servers.set(serverId, server);
       
       // イベントを発行
-      this.emit('playerJoined', {
+      const joinData = {
         serverId,
         player: newPlayer,
         currentPlayerCount: server.playersOnline
-      });
+      };
+      this.emit('playerJoined', joinData);
+      
+      // プラグインにイベントを転送
+      this.triggerPluginEvent(serverId, 'playerJoin', joinData);
       
       logger.info('ServerManager', `Player joined: ${player.name}`, { serverId, playerName: player.name, xuid: player.xuid, ipAddress: player.ipAddress, port: (player as any).port });
     }
@@ -134,11 +138,15 @@ export class ServerManager {
       this.servers.set(serverId, server);
       
       // イベントを発行
-      this.emit('playerLeft', {
+      const leftData = {
         serverId,
         player: leftPlayer,
         currentPlayerCount: server.playersOnline
-      });
+      };
+      this.emit('playerLeft', leftData);
+      
+      // プラグインにイベントを転送
+      this.triggerPluginEvent(serverId, 'playerLeave', leftData);
       
       logger.info('ServerManager', `Player left: ${player.name}`, { serverId, playerName: player.name });
     }
@@ -443,6 +451,10 @@ export class ServerManager {
           break;
         case 'running':
           server.status = 'online';
+          // サーバーがオンラインになったら、有効化されているプラグインを自動起動
+          this.autoEnablePluginsForServer(server.id).catch((err: Error) => {
+            console.error(`❌ Failed to auto-enable plugins for ${server.id}:`, err);
+          });
           break;
         case 'stopping':
           server.status = 'stopping';
@@ -1181,6 +1193,16 @@ export class ServerManager {
     }
   }
 
+  // プラグインからのコンソールログをクライアントにブロードキャスト
+  public broadcastConsoleOutput(serverId: string, message: string): void {
+    // Emit console.output event so messageRouter can broadcast to clients
+    this.emit('console.output', {
+      serverId,
+      line: message,
+      timestamp: new Date().toISOString()
+    });
+  }
+
   // サーバーディレクトリの検証
   public async validateServerDirectory(serverDirectory: string) {
     return await minecraftServerDetector.validateServerDirectory(serverDirectory);
@@ -1233,14 +1255,36 @@ export class ServerManager {
     
     try {
       const plugins = await loader.loadPlugins();
+      // Merge persisted enabled/metadata state from server config if available
+      try {
+        const server = this.servers.get(serverId);
+        if (server && server.plugins) {
+          plugins.forEach(p => {
+            const persisted = server.plugins && server.plugins[p.id];
+            if (persisted) {
+              p.enabled = persisted.enabled === true;
+              // merge some metadata if missing
+              p.metadata = p.metadata || {};
+              p.metadata.name = p.metadata.name || persisted.name;
+              p.metadata.version = p.metadata.version || persisted.version;
+              p.filePath = p.filePath || persisted.filePath;
+              p.error = p.error || persisted.error;
+            }
+          });
+        }
+      } catch (mergeErr) {
+        console.warn(`⚠️ Failed to merge persisted plugin state for ${serverId}:`, mergeErr);
+      }
+
       console.log(`✅ [Plugin] Loaded ${plugins.length} plugins:`, plugins.map(p => ({
         id: p.id,
-        name: p.metadata.name,
-        version: p.metadata.version,
+        name: p.metadata?.name,
+        version: p.metadata?.version,
         loaded: p.loaded,
         enabled: p.enabled,
         error: p.error
       })));
+
       return plugins;
     } catch (error) {
       console.error(`❌ [Plugin] Failed to load plugins for server ${serverId}:`, error);
@@ -1254,6 +1298,26 @@ export class ServerManager {
   public getPlugins(serverId: string) {
     const loader = this.getPluginLoader(serverId);
     const plugins = loader.getPlugins();
+    // Merge persisted enabled state for quick getPlugins
+    try {
+      const server = this.servers.get(serverId);
+      if (server && server.plugins) {
+        plugins.forEach(p => {
+          const persisted = server.plugins && server.plugins[p.id];
+          if (persisted) {
+            p.enabled = persisted.enabled === true;
+            p.metadata = p.metadata || {};
+            p.metadata.name = p.metadata.name || persisted.name;
+            p.metadata.version = p.metadata.version || persisted.version;
+            p.filePath = p.filePath || persisted.filePath;
+            p.error = p.error || persisted.error;
+          }
+        });
+      }
+    } catch (mergeErr) {
+      console.warn(`⚠️ Failed to merge persisted plugin state for ${serverId}:`, mergeErr);
+    }
+
     console.log(`📋 [Plugin] Getting plugins for server ${serverId}: ${plugins.length} found`);
     return plugins;
   }
@@ -1271,6 +1335,27 @@ export class ServerManager {
         name: plugin.metadata.name,
         version: plugin.metadata.version
       });
+      // Persist plugin enabled state into server config
+      try {
+        const server = this.servers.get(serverId);
+        if (server) {
+          server.plugins = server.plugins || {};
+          server.plugins[pluginId] = {
+            id: plugin.id,
+            name: plugin.metadata.name,
+            version: plugin.metadata.version,
+            filePath: plugin.filePath,
+            enabled: true
+          };
+          // update timestamp so saveServers writes a fresh updatedAt
+          server.updatedAt = new Date();
+          this.servers.set(serverId, server);
+          await this.saveServersToStorage();
+          console.log(`💾 Persisted enabled plugin ${pluginId} into server ${serverId}`);
+        }
+      } catch (err) {
+        console.error('❌ Failed to persist plugin enable state:', err);
+      }
       return plugin;
     } catch (error) {
       console.error(`❌ [Plugin] Failed to enable plugin ${pluginId}:`, error);
@@ -1288,6 +1373,20 @@ export class ServerManager {
     try {
       const plugin = await loader.disablePlugin(pluginId);
       console.log(`✅ [Plugin] Disabled plugin ${pluginId}`);
+      // Persist plugin disabled state into server config
+      try {
+        const server = this.servers.get(serverId);
+        if (server && server.plugins && server.plugins[pluginId]) {
+          // Mark as disabled; keep metadata for inspection
+          server.plugins[pluginId].enabled = false;
+          server.updatedAt = new Date();
+          this.servers.set(serverId, server);
+          await this.saveServersToStorage();
+          console.log(`💾 Persisted disabled plugin ${pluginId} into server ${serverId}`);
+        }
+      } catch (err) {
+        console.error('❌ Failed to persist plugin disable state:', err);
+      }
       return plugin;
     } catch (error) {
       console.error(`❌ [Plugin] Failed to disable plugin ${pluginId}:`, error);
@@ -1302,6 +1401,48 @@ export class ServerManager {
     const loader = this.pluginLoaders.get(serverId);
     if (loader) {
       loader.triggerEvent(eventName, data);
+    }
+  }
+
+  /**
+   * Auto-enable plugins that were enabled before server stopped
+   */
+  private async autoEnablePluginsForServer(serverId: string): Promise<void> {
+    console.log(`🔌 [Plugin] Auto-enabling plugins for server ${serverId}`);
+    
+    try {
+      const server = this.servers.get(serverId);
+      if (!server) {
+        console.warn(`⚠️ [Plugin] Server ${serverId} not found for auto-enable`);
+        return;
+      }
+
+      // Load all plugins first
+      await this.loadPlugins(serverId);
+
+      // Get plugins that should be enabled
+      const plugins = this.getPlugins(serverId);
+      const toEnable = plugins.filter(p => p.enabled === true && p.loaded);
+
+      if (toEnable.length === 0) {
+        console.log(`📋 [Plugin] No plugins to auto-enable for server ${serverId}`);
+        return;
+      }
+
+      console.log(`🚀 [Plugin] Auto-enabling ${toEnable.length} plugin(s) for server ${serverId}: ${toEnable.map(p => p.metadata?.name || p.id).join(', ')}`);
+
+      // Enable each plugin
+      for (const plugin of toEnable) {
+        try {
+          await this.enablePlugin(serverId, plugin.id);
+          console.log(`✅ [Plugin] Auto-enabled plugin: ${plugin.metadata?.name || plugin.id}`);
+        } catch (err) {
+          console.error(`❌ [Plugin] Failed to auto-enable plugin ${plugin.id}:`, err);
+          // Continue with other plugins even if one fails
+        }
+      }
+    } catch (error) {
+      console.error(`❌ [Plugin] Failed to auto-enable plugins for server ${serverId}:`, error);
     }
   }
 
