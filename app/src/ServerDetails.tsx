@@ -74,7 +74,32 @@ const pickEmoji = (serverId: string) => {
   return fallbackEmojis[index % fallbackEmojis.length];
 };
 
-type DetailTab = "overview" | "players" | "console" | "operations" | "plugins";
+// ユーティリティ関数
+const formatBytes = (bytes: number): string => {
+  if (bytes === 0) return "0 B";
+  const k = 1024;
+  const sizes = ["B", "KB", "MB", "GB", "TB"];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return `${(bytes / Math.pow(k, i)).toFixed(2)} ${sizes[i]}`;
+};
+
+const formatBytesPerSecond = (bytesPerSec: number): string => {
+  return `${formatBytes(bytesPerSec)}/s`;
+};
+
+const formatDuration = (ms: number): string => {
+  const seconds = Math.floor(ms / 1000);
+  const minutes = Math.floor(seconds / 60);
+  const hours = Math.floor(minutes / 60);
+  const days = Math.floor(hours / 24);
+  
+  if (days > 0) return `${days}日 ${hours % 24}時間`;
+  if (hours > 0) return `${hours}時間 ${minutes % 60}分`;
+  if (minutes > 0) return `${minutes}分 ${seconds % 60}秒`;
+  return `${seconds}秒`;
+};
+
+type DetailTab = "overview" | "players" | "console" | "operations" | "plugins" | "network";
 
 // Note: DETAIL_TABS now uses translation function inside component
 // const DETAIL_TABS will be defined inside the component to access t() function
@@ -165,6 +190,10 @@ function ServerDetails() {
   const [snackbarSeverity, setSnackbarSeverity] = useState<
     "success" | "error" | "info" | "warning"
   >("info");
+
+  // ネットワーク統計の状態
+  const [networkStats, setNetworkStats] = useState<any>(null);
+  const [clientStats, setClientStats] = useState<any[]>([]);
 
   // サーバーデータの読み込み
   const loadServerData = useCallback(async () => {
@@ -476,6 +505,69 @@ function ServerDetails() {
     [server]
   );
 
+  // ネットワーク統計イベントハンドラー
+  const handleNetworkStats = useCallback(
+    (data: any) => {
+      if (data?.serverId === id) {
+        setNetworkStats(data.networkStats);
+        
+        // クライアント統計を真のIPアドレスでグループ化
+        const rawStats = data.clientStats || [];
+        const grouped = new Map<string, any>();
+        
+        rawStats.forEach((client: any) => {
+          // 真のクライアントアドレスをキーとして使用
+          const realAddress = client.realClientAddress || client.clientAddress;
+          const realPort = client.realClientPort || client.clientPort;
+          const key = `${realAddress}:${realPort}`;
+          
+          if (!grouped.has(key)) {
+            // 新しいグループを作成
+            grouped.set(key, {
+              realClientAddress: realAddress,
+              realClientPort: realPort,
+              bytesSent: 0,
+              bytesReceived: 0,
+              packetsSent: 0,
+              packetsReceived: 0,
+              uploadSpeed: 0,
+              downloadSpeed: 0,
+              connectedAt: client.connectedAt,
+              connections: [] as any[]
+            });
+          }
+          
+          const group = grouped.get(key)!;
+          
+          // 統計を集計
+          group.bytesSent += client.bytesSent || 0;
+          group.bytesReceived += client.bytesReceived || 0;
+          group.packetsSent += client.packetsSent || 0;
+          group.packetsReceived += client.packetsReceived || 0;
+          group.uploadSpeed += client.uploadSpeed || 0;
+          group.downloadSpeed += client.downloadSpeed || 0;
+          
+          // 最も古い接続時刻を使用
+          if (client.connectedAt < group.connectedAt) {
+            group.connectedAt = client.connectedAt;
+          }
+          
+          // 接続情報を保存（詳細表示用）
+          group.connections.push({
+            clientAddress: client.clientAddress,
+            clientPort: client.clientPort,
+            bytesSent: client.bytesSent,
+            bytesReceived: client.bytesReceived
+          });
+        });
+        
+        // Mapを配列に変換
+        setClientStats(Array.from(grouped.values()));
+      }
+    },
+    [id]
+  );
+
   // ...existing code...
 
   // 初期化とイベント処理
@@ -568,6 +660,7 @@ function ServerDetails() {
     };
     bedrockProxyAPI.on("server.properties.updated", handlePropsUpdated);
     bedrockProxyAPI.on("server.properties.updateFailed", handlePropsFailed);
+    bedrockProxyAPI.on("networkStats", handleNetworkStats);
 
     return () => {
       isMounted = false;
@@ -578,6 +671,7 @@ function ServerDetails() {
       bedrockProxyAPI.off("console.output", handleConsoleOutput);
       bedrockProxyAPI.off("server.properties.updated", handlePropsUpdated);
       bedrockProxyAPI.off("server.properties.updateFailed", handlePropsFailed);
+      bedrockProxyAPI.off("networkStats", handleNetworkStats);
       // Do NOT unsubscribe global event subscriptions here — other components
       // (like ServerList) rely on those subscriptions. Only remove handlers above.
     };
@@ -587,8 +681,43 @@ function ServerDetails() {
     handlePlayerJoined,
     handlePlayerLeft,
     handleConsoleOutput,
+    handleNetworkStats,
     loadServerData,
   ]);
+
+  // ネットワーク統計の自動更新（サーバーがオンラインの場合）
+  useEffect(() => {
+    if (!server || !id) return;
+    
+    // サーバーがオンラインまたは起動中の場合のみ有効
+    const shouldMonitor = server.status === 'online' || server.status === 'starting';
+    
+    if (!shouldMonitor) {
+      // オフラインの場合は統計をクリア
+      setNetworkStats(null);
+      setClientStats([]);
+      return;
+    }
+
+    // バックエンドは1秒ごとにnetworkStatsイベントを自動配信しているため、
+    // フロントエンドでは特別なポーリングは不要
+    // ただし、初回表示時に即座にデータを表示するため、
+    // 5秒後に統計が表示されない場合は「収集中」から「データなし」に切り替える
+    let noDataTimeout: NodeJS.Timeout | null = null;
+    
+    if (!networkStats) {
+      noDataTimeout = setTimeout(() => {
+        // 5秒経っても統計が来ない場合、ログを出力
+        console.debug('[NetworkStats] No network stats received after 5 seconds');
+      }, 5000);
+    }
+
+    return () => {
+      if (noDataTimeout) {
+        clearTimeout(noDataTimeout);
+      }
+    };
+  }, [server, id, server?.status, networkStats]);
 
   // 新しいコンソール行が追加されたら自動でスクロール（設定に応じて）
   useEffect(() => {
@@ -956,6 +1085,7 @@ function ServerDetails() {
     { value: "console", label: t("tab.console") },
     { value: "operations", label: t("tab.operations") },
     { value: "plugins", label: t("tab.plugins") || "プラグイン" },
+    { value: "network", label: t("tab.network") || "ネットワーク" },
   ];
 
   const statusLabel: Record<ServerStatus, string> = {
@@ -2176,6 +2306,191 @@ function ServerDetails() {
                   </Typography>
                 </Box>
               </Stack>
+            </CardContent>
+          </TabPanel>
+
+          {/* Network Tab */}
+          <TabPanel value="network" current={activeTab}>
+            <CardContent>
+              <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 2 }}>
+                <Typography variant="h6">
+                  {t("network.title") || "ネットワーク統計"}
+                </Typography>
+                <Stack direction="row" spacing={1} alignItems="center">
+                  {networkStats?.timestamp && (
+                    <Typography variant="caption" color="textSecondary">
+                      {t("network.lastUpdate") || "最終更新"}: {new Date(networkStats.timestamp).toLocaleTimeString()}
+                    </Typography>
+                  )}
+                  {server.status === 'online' && (
+                    <Chip 
+                      label={t("network.realtime") || "リアルタイム更新中"}
+                      size="small"
+                      color="success"
+                      variant="outlined"
+                    />
+                  )}
+                </Stack>
+              </Stack>
+              
+              {networkStats ? (
+                <Box>
+                  {/* 全体統計 */}
+                  <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' }, gap: 2, mb: 3 }}>
+                    <Card variant="outlined">
+                      <CardContent>
+                        <Typography variant="subtitle2" color="textSecondary">
+                          {t("network.totalSent") || "総送信量"}
+                        </Typography>
+                        <Typography variant="h5">
+                          {formatBytes(networkStats.totalBytesSent)}
+                        </Typography>
+                        <Typography variant="caption" color="textSecondary">
+                          {networkStats.totalPacketsSent.toLocaleString()} {t("network.packets") || "パケット"}
+                        </Typography>
+                      </CardContent>
+                    </Card>
+                    <Card variant="outlined">
+                      <CardContent>
+                        <Typography variant="subtitle2" color="textSecondary">
+                          {t("network.totalReceived") || "総受信量"}
+                        </Typography>
+                        <Typography variant="h5">
+                          {formatBytes(networkStats.totalBytesReceived)}
+                        </Typography>
+                        <Typography variant="caption" color="textSecondary">
+                          {networkStats.totalPacketsReceived.toLocaleString()} {t("network.packets") || "パケット"}
+                        </Typography>
+                      </CardContent>
+                    </Card>
+                    <Card variant="outlined">
+                      <CardContent>
+                        <Typography variant="subtitle2" color="textSecondary">
+                          {t("network.uploadSpeed") || "アップロード速度"}
+                        </Typography>
+                        <Typography variant="h5">
+                          {formatBytesPerSecond(networkStats.currentUploadSpeed)}
+                        </Typography>
+                      </CardContent>
+                    </Card>
+                    <Card variant="outlined">
+                      <CardContent>
+                        <Typography variant="subtitle2" color="textSecondary">
+                          {t("network.downloadSpeed") || "ダウンロード速度"}
+                        </Typography>
+                        <Typography variant="h5">
+                          {formatBytesPerSecond(networkStats.currentDownloadSpeed)}
+                        </Typography>
+                      </CardContent>
+                    </Card>
+                    <Card variant="outlined">
+                      <CardContent>
+                        <Typography variant="subtitle2" color="textSecondary">
+                          {t("network.activeConnections") || "アクティブ接続"}
+                        </Typography>
+                        <Typography variant="h5">
+                          {networkStats.activeConnections}
+                        </Typography>
+                      </CardContent>
+                    </Card>
+                    <Card variant="outlined">
+                      <CardContent>
+                        <Typography variant="subtitle2" color="textSecondary">
+                          {t("network.totalConnections") || "総接続数"}
+                        </Typography>
+                        <Typography variant="h5">
+                          {networkStats.totalConnections}
+                        </Typography>
+                      </CardContent>
+                    </Card>
+                  </Box>
+
+                  {/* クライアントごとの統計 */}
+                  <Divider sx={{ my: 2 }} />
+                  <Typography variant="h6" gutterBottom>
+                    {t("network.clientStats") || "クライアント別統計"}
+                  </Typography>
+                  
+                  {clientStats && clientStats.length > 0 ? (
+                    <List>
+                      {clientStats.map((client: any, index: number) => (
+                        <Card key={index} variant="outlined" sx={{ mb: 2 }}>
+                          <CardContent>
+                            <Stack spacing={2}>
+                              <Box>
+                                <Typography variant="subtitle1" fontWeight="bold">
+                                  {client.realClientAddress}:{client.realClientPort}
+                                </Typography>
+                                {client.connections && client.connections.length > 1 && (
+                                  <Typography variant="caption" color="textSecondary">
+                                    {client.connections.length} {t("network.activeConnections") || "接続"} 
+                                    {" ("}
+                                    {client.connections.map((conn: any) => `${conn.clientPort}`).join(", ")}
+                                    {")"}
+                                  </Typography>
+                                )}
+                              </Box>
+                              <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr 1fr', sm: '1fr 1fr 1fr 1fr' }, gap: 2 }}>
+                                <Box>
+                                  <Typography variant="caption" color="textSecondary">
+                                    {t("network.sent") || "送信"}
+                                  </Typography>
+                                  <Typography variant="body2">
+                                    {formatBytes(client.bytesSent)}
+                                  </Typography>
+                                  <Typography variant="caption" color="textSecondary">
+                                    {client.packetsSent.toLocaleString()} {t("network.packets") || "パケット"}
+                                  </Typography>
+                                </Box>
+                                <Box>
+                                  <Typography variant="caption" color="textSecondary">
+                                    {t("network.received") || "受信"}
+                                  </Typography>
+                                  <Typography variant="body2">
+                                    {formatBytes(client.bytesReceived)}
+                                  </Typography>
+                                  <Typography variant="caption" color="textSecondary">
+                                    {client.packetsReceived.toLocaleString()} {t("network.packets") || "パケット"}
+                                  </Typography>
+                                </Box>
+                                <Box>
+                                  <Typography variant="caption" color="textSecondary">
+                                    {t("network.uploadSpeed") || "アップロード"}
+                                  </Typography>
+                                  <Typography variant="body2">
+                                    {formatBytesPerSecond(client.uploadSpeed)}
+                                  </Typography>
+                                </Box>
+                                <Box>
+                                  <Typography variant="caption" color="textSecondary">
+                                    {t("network.downloadSpeed") || "ダウンロード"}
+                                  </Typography>
+                                  <Typography variant="body2">
+                                    {formatBytesPerSecond(client.downloadSpeed)}
+                                  </Typography>
+                                </Box>
+                              </Box>
+                              <Typography variant="caption" color="textSecondary">
+                                {t("network.connected") || "接続時間"}: {formatDuration(Date.now() - client.connectedAt)}
+                              </Typography>
+                            </Stack>
+                          </CardContent>
+                        </Card>
+                      ))}
+                    </List>
+                  ) : (
+                    <Alert severity="info">
+                      {t("network.noClients") || "接続中のクライアントはありません"}
+                    </Alert>
+                  )}
+                </Box>
+              ) : (
+                <Alert severity="info">
+                  {server.status === 'online' ? 
+                    (t("network.waiting") || "ネットワーク統計を収集中です...") :
+                    (t("network.serverOffline") || "ネットワーク統計を表示するにはサーバーを起動してください。プロキシ専用モードでも利用できます。")}
+                </Alert>
+              )}
             </CardContent>
           </TabPanel>
         </Card>

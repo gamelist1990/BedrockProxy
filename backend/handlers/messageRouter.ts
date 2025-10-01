@@ -297,6 +297,12 @@ export class MessageRouter {
     this.serverManager.on("consoleOutput", (data: any) => {
       this.broadcastEvent("console.output", data);
     });
+    
+    // ネットワーク統計イベント
+    this.serverManager.on("networkStats", (data: any) => {
+      this.broadcastEvent("networkStats", data);
+    });
+    
     // server.properties update events
     this.serverManager.on("serverPropertiesUpdated", (data: any) => {
       this.broadcastEvent("server.properties.updated", data);

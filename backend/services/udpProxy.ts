@@ -1,6 +1,6 @@
 import { createSocket, Socket } from "dgram";
 import { logger } from "./logger.js";
-import type { PlayerPacket, PlayerAction } from "../types/index.js";
+import type { PlayerPacket, PlayerAction, NetworkStats, ClientNetworkStats } from "../types/index.js";
 import {
   isProxyProtocolV2,
   parseProxyProtocolV2,
@@ -33,6 +33,17 @@ export interface ProxyConnection {
   realClientPort?: number; // Proxy Protocol v2で解析された真のクライアントポート
   packetCount?: number; // レート制限用のパケット数カウンター
   lastReset?: number; // レート制限リセット時刻
+  
+  // ネットワーク統計用フィールド
+  bytesSent: number;
+  bytesReceived: number;
+  packetsSent: number;
+  packetsReceived: number;
+  connectedAt: number;
+  
+  // Ping測定用
+  lastPingSent?: number;
+  pendingPingId?: number;
 }
 
 export class UDPProxy {
@@ -49,9 +60,27 @@ export class UDPProxy {
   private readonly DEFAULT_RATE_LIMIT = 100; // 秒間パケット数
   private readonly SOCKET_POOL_SIZE = 10; // ソケットプールのサイズ
 
+  // ネットワーク統計
+  private totalBytesSent = 0;
+  private totalBytesReceived = 0;
+  private totalPacketsSent = 0;
+  private totalPacketsReceived = 0;
+  private totalConnectionsCreated = 0;
+  
+  // 帯域幅計算用
+  private lastStatsUpdate = Date.now();
+  private lastBytesSent = 0;
+  private lastBytesReceived = 0;
+  private currentUploadSpeed = 0;
+  private currentDownloadSpeed = 0;
+  
+  // 統計更新インターバル
+  private statsUpdateInterval: NodeJS.Timeout | null = null;
+
   // イベントハンドラー
   private onPlayerAction?: (packet: PlayerPacket) => void;
   private onConnectionActivity?: (clientIP: string, clientPort: number, data: Buffer) => void;
+  private onNetworkStatsUpdate?: (stats: NetworkStats, clientStats: ClientNetworkStats[]) => void;
 
   constructor(config: UDPProxyConfig) {
     this.config = {
@@ -76,11 +105,35 @@ export class UDPProxy {
     this.sharedSocket.setRecvBufferSize(1024 * 1024 * 2);
     this.sharedSocket.setSendBufferSize(1024 * 1024 * 2);
     
+    // 共有ソケットのメッセージハンドラーを設定
+    this.sharedSocket.on('message', (data, rinfo) => {
+      this.handleSharedSocketMessage(data, rinfo);
+    });
+    
+    this.sharedSocket.on('error', (error) => {
+      logger.error('udp-proxy', 'Shared socket error', {
+        error: error?.message || String(error) || 'unknown error'
+      });
+    });
+    
     // 高負荷用のソケットプールを作成
     for (let i = 0; i < this.SOCKET_POOL_SIZE; i++) {
       const socket = createSocket('udp4');
       socket.setRecvBufferSize(1024 * 1024);
       socket.setSendBufferSize(1024 * 1024);
+      
+      // プールソケットのメッセージハンドラーを設定
+      socket.on('message', (data, rinfo) => {
+        this.handleSharedSocketMessage(data, rinfo);
+      });
+      
+      socket.on('error', (error) => {
+        logger.error('udp-proxy', 'Pool socket error', {
+          poolIndex: i,
+          error: error?.message || String(error) || 'unknown error'
+        });
+      });
+      
       this.socketPool.push(socket);
     }
 
@@ -88,6 +141,59 @@ export class UDPProxy {
       poolSize: this.SOCKET_POOL_SIZE,
       reuseEnabled: true
     });
+  }
+  
+  // 共有ソケット/プールソケットからのメッセージを適切なクライアントに転送
+  private handleSharedSocketMessage(data: Buffer, rinfo: { address: string; port: number }): void {
+    if (!this.server) return;
+    
+    // どのクライアントへの返信かを特定する必要がある
+    // サーバーからの応答はターゲットサーバーから来るため、
+    // 全接続をチェックして該当するものを見つける
+    for (const [connectionKey, connection] of this.connections) {
+      // 共有ソケットまたはプールソケットを使用している接続のみ対象
+      const isShared = connection.targetSocket === this.sharedSocket ||
+                       this.socketPool.includes(connection.targetSocket);
+      
+      if (isShared && rinfo.address === this.config.targetHost && rinfo.port === this.config.targetPort) {
+        // 最後にアクティビティがあった接続に送信（最新のものを優先）
+        const timeSinceActivity = Date.now() - connection.lastActivity;
+        
+        // 最近アクティブだった接続（2秒以内）に送信
+        if (timeSinceActivity < 2000) {
+          this.server.send(data, connection.clientPort, connection.clientAddress, (error) => {
+            if (error) {
+              const errorMsg = error?.message || String(error) || 'unknown error';
+              if (!errorMsg.includes('Socket is closed') && !errorMsg.includes('closed')) {
+                logger.error('udp-proxy', 'Failed to send response to client', {
+                  client: `${connection.clientAddress}:${connection.clientPort}`,
+                  error: errorMsg
+                });
+              }
+            } else {
+              // 統計情報を更新
+              connection.bytesReceived += data.length;
+              connection.packetsReceived++;
+              this.totalBytesReceived += data.length;
+              this.totalPacketsReceived++;
+              
+              // レスポンス転送成功時のログ（最初のレスポンス時のみ）
+              if (!connection.hasLoggedResponseSuccess) {
+                logger.info('udp-proxy', 'Response forwarded to client', {
+                  client: `${connection.clientAddress}:${connection.clientPort}`,
+                  target: `${this.config.targetHost}:${this.config.targetPort}`,
+                  size: data.length
+                });
+                connection.hasLoggedResponseSuccess = true;
+              }
+            }
+          });
+          
+          // 最初に見つかった最近アクティブな接続に送信して終了
+          return;
+        }
+      }
+    }
   }
 
   private setupServerEvents(): void {
@@ -99,7 +205,9 @@ export class UDPProxy {
     });
 
     this.server.on('error', (error) => {
-      logger.error('udp-proxy', 'Server error', { error: error.message });
+      logger.error('udp-proxy', 'Server error', { 
+        error: error?.message || String(error) || 'unknown error' 
+      });
     });
 
     this.server.on('listening', () => {
@@ -187,6 +295,7 @@ export class UDPProxy {
       connection.lastReset = now;
       
       this.connections.set(connectionKey, connection);
+      this.totalConnectionsCreated++;
       
       logger.info('udp-proxy', 'New connection established', {
         client: connectionKey,
@@ -239,18 +348,25 @@ export class UDPProxy {
 
     connection.targetSocket.send(dataToSend, this.config.targetPort, this.config.targetHost, (error) => {
       if (error) {
-        if (String(error.message).includes('Socket is closed') || String(error.message).includes('closed')) {
+        const errorMsg = error?.message || String(error) || 'unknown error';
+        if (errorMsg.includes('Socket is closed') || errorMsg.includes('closed')) {
           logger.debug('udp-proxy', 'Failed to forward message to target (socket closed)', {
             client: connectionKey,
-            error: error.message
+            error: errorMsg
           });
         } else {
           logger.error('udp-proxy', 'Failed to forward message to target', {
             client: connectionKey,
-            error: error.message
+            error: errorMsg
           });
         }
       } else {
+        // 統計情報を更新
+        connection.bytesSent += dataToSend.length;
+        connection.packetsSent++;
+        this.totalBytesSent += dataToSend.length;
+        this.totalPacketsSent++;
+        
         if (!connection.hasLoggedSuccess) {
           logger.info('udp-proxy', 'Message forwarded successfully', {
             client: connectionKey,
@@ -267,61 +383,86 @@ export class UDPProxy {
   private createConnection(clientAddress: string, clientPort: number): ProxyConnection {
     // ソケット再利用が有効な場合は共有ソケットまたはプールから取得
     let targetSocket: Socket;
+    let isSharedSocket = false;
+    
     if (this.config.socketReuseEnabled && this.connections.size < 50) {
       // 接続数が少ない場合は共有ソケットを使用
       targetSocket = this.sharedSocket!;
+      isSharedSocket = true;
     } else if (this.config.socketReuseEnabled && this.socketPool.length > 0) {
       // ラウンドロビンでプールからソケットを取得
       targetSocket = this.socketPool[this.poolIndex];
       this.poolIndex = (this.poolIndex + 1) % this.socketPool.length;
+      isSharedSocket = true;
     } else {
       // 新しいソケットを作成(フォールバック)
       targetSocket = createSocket('udp4');
+      isSharedSocket = false;
     }
 
     const connection: ProxyConnection = {
       clientAddress,
       clientPort,
       targetSocket,
-      lastActivity: Date.now()
+      lastActivity: Date.now(),
+      bytesSent: 0,
+      bytesReceived: 0,
+      packetsSent: 0,
+      packetsReceived: 0,
+      connectedAt: Date.now()
     };
     
-    // ターゲットからのレスポンスを処理
-    targetSocket.on('message', (data) => {
-      this.server.send(data, clientPort, clientAddress, (error) => {
-        if (error) {
-          if (String(error.message).includes('Socket is closed') || String(error.message).includes('closed')) {
-            logger.debug('udp-proxy', 'Failed to send response to client (socket closed)', {
-              client: `${clientAddress}:${clientPort}`,
-              error: error.message
-            });
+    // 共有ソケットでない場合のみイベントリスナーを設定
+    // 共有ソケットのイベントリスナーは初期化時に一度だけ設定済み
+    if (!isSharedSocket) {
+      targetSocket.on('message', (data, rinfo) => {
+        if (!this.server) return;
+        
+        this.server.send(data, clientPort, clientAddress, (error) => {
+          if (error) {
+            const errorMsg = error?.message || String(error) || 'unknown error';
+            if (errorMsg.includes('Socket is closed') || errorMsg.includes('closed')) {
+              logger.debug('udp-proxy', 'Failed to send response to client (socket closed)', {
+                client: `${clientAddress}:${clientPort}`,
+                error: errorMsg
+              });
+            } else {
+              logger.error('udp-proxy', 'Failed to send response to client', {
+                client: `${clientAddress}:${clientPort}`,
+                error: errorMsg
+              });
+            }
           } else {
-            logger.error('udp-proxy', 'Failed to send response to client', {
-              client: `${clientAddress}:${clientPort}`,
-              error: error.message
-            });
+            // 統計情報を更新
+            const conn = this.connections.get(`${clientAddress}:${clientPort}`);
+            if (conn) {
+              conn.bytesReceived += data.length;
+              conn.packetsReceived++;
+              this.totalBytesReceived += data.length;
+              this.totalPacketsReceived++;
+              
+              // レスポンス転送成功時のログ（最初のレスポンス時のみ）
+              if (!conn.hasLoggedResponseSuccess) {
+                logger.info('udp-proxy', 'Response forwarded to client', {
+                  client: `${clientAddress}:${clientPort}`,
+                  target: `${this.config.targetHost}:${this.config.targetPort}`,
+                  size: data.length
+                });
+                conn.hasLoggedResponseSuccess = true;
+              }
+            }
           }
-        } else {
-          // レスポンス転送成功時のログ（最初のレスポンス時のみ）
-          if (!connection.hasLoggedResponseSuccess) {
-            logger.info('udp-proxy', 'Response forwarded to client', {
-              client: `${clientAddress}:${clientPort}`,
-              target: `${this.config.targetHost}:${this.config.targetPort}`,
-              size: data.length
-            });
-            connection.hasLoggedResponseSuccess = true;
-          }
-        }
+        });
       });
-    });
-
-    targetSocket.on('error', (error) => {
-      logger.error('udp-proxy', 'Target socket error', {
-        client: `${clientAddress}:${clientPort}`,
-        error: error.message
+      
+      targetSocket.on('error', (error) => {
+        logger.error('udp-proxy', 'Target socket error', {
+          client: `${clientAddress}:${clientPort}`,
+          error: error?.message || String(error) || 'unknown error'
+        });
       });
-    });
-
+    }
+    
     return connection;
   }
 
@@ -339,6 +480,7 @@ export class UDPProxy {
       this.server.bind(this.config.listenPort, () => {
         this.isRunning = true;
         this.startCleanupTimer();
+        this.startStatsUpdateTimer();
         
         logger.info('udp-proxy', 'UDP Proxy started', {
           listenPort: this.config.listenPort,
@@ -361,6 +503,12 @@ export class UDPProxy {
       if (this.cleanupInterval) {
         clearInterval(this.cleanupInterval);
         this.cleanupInterval = null;
+      }
+      
+      // 統計更新タイマーを停止
+      if (this.statsUpdateInterval) {
+        clearInterval(this.statsUpdateInterval);
+        this.statsUpdateInterval = null;
       }
 
       // すべての接続を閉じる
@@ -411,6 +559,73 @@ export class UDPProxy {
     }, 30000); // 30秒間隔
   }
 
+  private startStatsUpdateTimer(): void {
+    this.statsUpdateInterval = setInterval(() => {
+      this.updateNetworkStats();
+    }, 1000); // 1秒間隔
+  }
+
+  private updateNetworkStats(): void {
+    const now = Date.now();
+    const elapsed = (now - this.lastStatsUpdate) / 1000; // 秒単位
+    
+    if (elapsed === 0) return;
+    
+    // 帯域幅計算
+    const bytesSentDiff = this.totalBytesSent - this.lastBytesSent;
+    const bytesReceivedDiff = this.totalBytesReceived - this.lastBytesReceived;
+    
+    this.currentUploadSpeed = Math.round(bytesSentDiff / elapsed);
+    this.currentDownloadSpeed = Math.round(bytesReceivedDiff / elapsed);
+    
+    // 次回のために保存
+    this.lastStatsUpdate = now;
+    this.lastBytesSent = this.totalBytesSent;
+    this.lastBytesReceived = this.totalBytesReceived;
+    
+    // クライアントごとの統計を収集
+    const clientStats: ClientNetworkStats[] = [];
+    this.connections.forEach((conn, key) => {
+      const timeSinceConnect = now - conn.connectedAt;
+      const uploadSpeed = timeSinceConnect > 0 ? Math.round((conn.bytesSent / timeSinceConnect) * 1000) : 0;
+      const downloadSpeed = timeSinceConnect > 0 ? Math.round((conn.bytesReceived / timeSinceConnect) * 1000) : 0;
+      
+      clientStats.push({
+        clientKey: key,
+        clientAddress: conn.clientAddress,
+        clientPort: conn.clientPort,
+        realClientAddress: conn.realClientAddress,
+        realClientPort: conn.realClientPort,
+        bytesSent: conn.bytesSent,
+        bytesReceived: conn.bytesReceived,
+        packetsSent: conn.packetsSent,
+        packetsReceived: conn.packetsReceived,
+        connectedAt: conn.connectedAt,
+        lastActivity: conn.lastActivity,
+        uploadSpeed,
+        downloadSpeed
+      });
+    });
+    
+    // 全体統計
+    const networkStats: NetworkStats = {
+      totalBytesSent: this.totalBytesSent,
+      totalBytesReceived: this.totalBytesReceived,
+      totalPacketsSent: this.totalPacketsSent,
+      totalPacketsReceived: this.totalPacketsReceived,
+      currentUploadSpeed: this.currentUploadSpeed,
+      currentDownloadSpeed: this.currentDownloadSpeed,
+      activeConnections: this.connections.size,
+      totalConnections: this.totalConnectionsCreated,
+      timestamp: now
+    };
+    
+    // イベントハンドラーを呼び出す
+    if (this.onNetworkStatsUpdate) {
+      this.onNetworkStatsUpdate(networkStats, clientStats);
+    }
+  }
+
   private cleanupStaleConnections(): void {
     const now = Date.now();
     const staleConnections: string[] = [];
@@ -454,6 +669,11 @@ export class UDPProxy {
   // 接続アクティビティハンドラーを設定
   public setConnectionActivityHandler(handler: (clientIP: string, clientPort: number, data: Buffer) => void): void {
     this.onConnectionActivity = handler;
+  }
+
+  // ネットワーク統計更新ハンドラーを設定
+  public setNetworkStatsHandler(handler: (stats: NetworkStats, clientStats: ClientNetworkStats[]) => void): void {
+    this.onNetworkStatsUpdate = handler;
   }
 
   // プレイヤーアクションを発火

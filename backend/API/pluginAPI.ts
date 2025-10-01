@@ -467,6 +467,201 @@ export class PluginAPI {
     }
   }
   
+  // ==================== Network Statistics ====================
+  
+  async getNetworkStats(): Promise<any> {
+    try {
+      if (!this.serverManager) {
+        throw new Error('ServerManager not available');
+      }
+      
+      const udpProxy = (this.serverManager as any).getUdpProxy
+        ? (this.serverManager as any).getUdpProxy(this.serverId)
+        : null;
+      
+      if (!udpProxy || typeof udpProxy.getNetworkStats !== 'function') {
+        return {
+          totalBytesSent: 0,
+          totalBytesReceived: 0,
+          totalPacketsSent: 0,
+          totalPacketsReceived: 0,
+          currentUploadSpeed: 0,
+          currentDownloadSpeed: 0,
+          activeConnections: 0,
+          totalConnections: 0,
+          timestamp: Date.now()
+        };
+      }
+      
+      return udpProxy.getNetworkStats();
+    } catch (err) {
+      this.error('getNetworkStats failed', err);
+      throw err;
+    }
+  }
+  
+  async getClientNetworkStats(): Promise<any[]> {
+    try {
+      if (!this.serverManager) {
+        throw new Error('ServerManager not available');
+      }
+      
+      const udpProxy = (this.serverManager as any).getUdpProxy
+        ? (this.serverManager as any).getUdpProxy(this.serverId)
+        : null;
+      
+      if (!udpProxy || typeof udpProxy.getClientStats !== 'function') {
+        return [];
+      }
+      
+      return Array.from(udpProxy.getClientStats().values());
+    } catch (err) {
+      this.error('getClientNetworkStats failed', err);
+      throw err;
+    }
+  }
+  
+  async getClientNetworkStatsById(clientAddress: string, clientPort: number): Promise<any | null> {
+    try {
+      const allStats = await this.getClientNetworkStats();
+      return allStats.find((stat: any) => 
+        stat.clientAddress === clientAddress && stat.clientPort === clientPort
+      ) || null;
+    } catch (err) {
+      this.error('getClientNetworkStatsById failed', err);
+      throw err;
+    }
+  }
+  
+  // ==================== Server Configuration ====================
+  
+  async getServerMode(): Promise<'normal' | 'proxyOnly'> {
+    try {
+      const server = this.serverManager.getServer(this.serverId);
+      if (!server) {
+        throw new Error('Server not found');
+      }
+      
+      // Check if server has executable path
+      if (!server.executablePath || server.executablePath === '') {
+        return 'proxyOnly';
+      }
+      
+      return 'normal';
+    } catch (err) {
+      this.error('getServerMode failed', err);
+      throw err;
+    }
+  }
+  
+  async getServerExecutablePath(): Promise<string | null> {
+    try {
+      const server = this.serverManager.getServer(this.serverId);
+      if (!server) {
+        throw new Error('Server not found');
+      }
+      
+      return server.executablePath || null;
+    } catch (err) {
+      this.error('getServerExecutablePath failed', err);
+      throw err;
+    }
+  }
+  
+  async getServerDirectory(): Promise<string | null> {
+    try {
+      const server = this.serverManager.getServer(this.serverId);
+      if (!server) {
+        throw new Error('Server not found');
+      }
+      
+      return server.serverDirectory || null;
+    } catch (err) {
+      this.error('getServerDirectory failed', err);
+      throw err;
+    }
+  }
+  
+  async getServerConfig(): Promise<any> {
+    try {
+      const server = this.serverManager.getServer(this.serverId);
+      if (!server) {
+        throw new Error('Server not found');
+      }
+      
+      const mode = await this.getServerMode();
+      
+      return {
+        id: server.id,
+        name: server.name,
+        address: server.address,
+        destinationAddress: server.destinationAddress,
+        status: server.status,
+        mode,
+        playersOnline: server.playersOnline,
+        maxPlayers: server.maxPlayers,
+        iconUrl: server.iconUrl,
+        tags: server.tags,
+        autoStart: server.autoStart,
+        autoRestart: server.autoRestart,
+        blockSameIP: server.blockSameIP,
+        forwardAddress: server.forwardAddress,
+        proxyProtocolV2Enabled: server.proxyProtocolV2Enabled,
+        pluginsEnabled: server.pluginsEnabled,
+        executablePath: server.executablePath,
+        serverDirectory: server.serverDirectory,
+        createdAt: server.createdAt,
+        updatedAt: server.updatedAt
+      };
+    } catch (err) {
+      this.error('getServerConfig failed', err);
+      throw err;
+    }
+  }
+  
+  async getPluginInfo(): Promise<any[]> {
+    try {
+      if (!this.serverManager) {
+        throw new Error('ServerManager not available');
+      }
+      
+      const loader = (this.serverManager as any).getPluginLoader
+        ? (this.serverManager as any).getPluginLoader(this.serverId)
+        : (this.serverManager as any).pluginLoaders && (this.serverManager as any).pluginLoaders.get(this.serverId);
+      
+      if (!loader || typeof loader.getPlugins !== 'function') {
+        return [];
+      }
+      
+      const plugins = loader.getPlugins() || [];
+      
+      return plugins.map((plugin: any) => ({
+        name: plugin.metadata?.name || plugin.id,
+        version: plugin.metadata?.version || '1.0.0',
+        description: plugin.metadata?.description || '',
+        author: plugin.metadata?.author || '',
+        enabled: !!plugin.enabled,
+        filePath: plugin.filePath || '',
+        dependencies: plugin.metadata?.dependencies || [],
+        error: plugin.error || undefined
+      }));
+    } catch (err) {
+      this.error('getPluginInfo failed', err);
+      throw err;
+    }
+  }
+  
+  async getPluginInfoByName(pluginName: string): Promise<any | null> {
+    try {
+      const allPlugins = await this.getPluginInfo();
+      return allPlugins.find((p: any) => p.name === pluginName) || null;
+    } catch (err) {
+      this.error('getPluginInfoByName failed', err);
+      throw err;
+    }
+  }
+
+  
   // ==================== Cleanup ====================
   
   /**

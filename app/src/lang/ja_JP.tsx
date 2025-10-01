@@ -211,6 +211,29 @@ export const ja_JP = {
   
   // プラグイン関連
   "tab.plugins": "プラグイン",
+  "tab.network": "ネットワーク",
+  
+  // ネットワーク統計
+  "network.title": "ネットワーク統計",
+  "network.totalSent": "総送信量",
+  "network.totalReceived": "総受信量",
+  "network.uploadSpeed": "アップロード速度",
+  "network.downloadSpeed": "ダウンロード速度",
+  "network.activeConnections": "アクティブ接続",
+  "network.totalConnections": "総接続数",
+  "network.packets": "パケット",
+  "network.clientStats": "クライアント別統計",
+  "network.noClients": "接続中のクライアントはありません",
+  "network.noData": "ネットワーク統計データはまだ利用できません。サーバーを起動してください。",
+  "network.waiting": "ネットワーク統計を収集中です...",
+  "network.serverOffline": "ネットワーク統計を表示するにはサーバーを起動してください。プロキシ専用モードでも利用できます。",
+  "network.proxy": "プロキシ経由",
+  "network.sent": "送信",
+  "network.received": "受信",
+  "network.connected": "接続時間",
+  "network.realtime": "リアルタイム更新中",
+  "network.lastUpdate": "最終更新",
+  
   "plugins.title": "プラグイン管理",
   "plugins.description": "サーバープラグインと拡張機能を管理します",
   "plugins.list": "インストール済みプラグイン",

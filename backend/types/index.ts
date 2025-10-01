@@ -15,6 +15,53 @@ export interface Player {
   icon?: string; // base64エンコードされたプレイヤーアイコン
 }
 
+// ネットワーク統計情報
+export interface NetworkStats {
+  // 全体統計
+  totalBytesSent: number;
+  totalBytesReceived: number;
+  totalPacketsSent: number;
+  totalPacketsReceived: number;
+  
+  // 帯域幅（bps）
+  currentUploadSpeed: number; // bytes/sec
+  currentDownloadSpeed: number; // bytes/sec
+  
+  // 接続情報
+  activeConnections: number;
+  totalConnections: number;
+  
+  // タイムスタンプ
+  timestamp: number;
+}
+
+// クライアントごとのネットワーク統計
+export interface ClientNetworkStats {
+  clientKey: string; // "IP:PORT"
+  clientAddress: string;
+  clientPort: number;
+  realClientAddress?: string;
+  realClientPort?: number;
+  
+  // 通信量
+  bytesSent: number;
+  bytesReceived: number;
+  packetsSent: number;
+  packetsReceived: number;
+  
+  // Ping（往復時間）
+  pingMs?: number;
+  lastPingTime?: number;
+  
+  // 接続時間
+  connectedAt: number;
+  lastActivity: number;
+  
+  // 帯域幅
+  uploadSpeed: number; // bytes/sec
+  downloadSpeed: number; // bytes/sec
+}
+
 // UDP Connection (for Proxy Only mode)
 export interface UDPConnection {
   id: string;

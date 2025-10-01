@@ -386,6 +386,16 @@ export class ServerManager {
                 // ignore
               }
             });
+            
+            // ネットワーク統計ハンドラーを設定
+            udpProxy.setNetworkStatsHandler((networkStats, clientStats) => {
+              this.emit('networkStats', {
+                serverId: server.id,
+                networkStats,
+                clientStats
+              });
+            });
+            
             await udpProxy.start();
             this.udpProxies.set(server.id, udpProxy);
 
@@ -812,6 +822,15 @@ export class ServerManager {
           } catch (e) {
             // ignore
           }
+        });
+
+        // ネットワーク統計ハンドラーを設定
+        udpProxy.setNetworkStatsHandler((networkStats, clientStats) => {
+          this.emit('networkStats', {
+            serverId: server.id,
+            networkStats,
+            clientStats
+          });
         });
 
         await udpProxy.start();

@@ -584,4 +584,283 @@ export interface PluginAPI {
    * ```
    */
   callPlugin(pluginName: string, functionName: string, ...args: any[]): Promise<any>;
+  
+  // ==================== Network Statistics ====================
+  
+  /**
+   * サーバーのネットワーク統計情報を取得します
+   * 送受信データ量、帯域幅、接続数などが含まれます
+   * 
+   * @returns ネットワーク統計情報
+   * 
+   * @example
+   * ```javascript
+   * const stats = await api.getNetworkStats();
+   * api.info(`アップロード: ${stats.currentUploadSpeed} bytes/sec`);
+   * api.info(`ダウンロード: ${stats.currentDownloadSpeed} bytes/sec`);
+   * api.info(`アクティブ接続: ${stats.activeConnections}`);
+   * ```
+   */
+  getNetworkStats(): Promise<NetworkStats>;
+  
+  /**
+   * クライアントごとのネットワーク統計情報を取得します
+   * 各プレイヤーの通信状況を確認できます
+   * 
+   * @returns クライアント別ネットワーク統計の配列
+   * 
+   * @example
+   * ```javascript
+   * const clientStats = await api.getClientNetworkStats();
+   * clientStats.forEach(client => {
+   *   api.info(`${client.clientAddress}: ${client.bytesSent} bytes sent`);
+   * });
+   * ```
+   */
+  getClientNetworkStats(): Promise<ClientNetworkStats[]>;
+  
+  /**
+   * 特定のクライアントのネットワーク統計を取得します
+   * 
+   * @param clientAddress - クライアントのIPアドレス
+   * @param clientPort - クライアントのポート番号
+   * @returns クライアントのネットワーク統計、見つからない場合はnull
+   * 
+   * @example
+   * ```javascript
+   * const stats = await api.getClientNetworkStatsById('192.168.1.10', 54321);
+   * if (stats) {
+   *   api.info(`Ping: ${stats.pingMs}ms`);
+   * }
+   * ```
+   */
+  getClientNetworkStatsById(clientAddress: string, clientPort: number): Promise<ClientNetworkStats | null>;
+  
+  // ==================== Server Configuration ====================
+  
+  /**
+   * サーバーの動作モードを取得します
+   * "normal" (通常モード) または "proxyOnly" (プロキシ専用モード)
+   * 
+   * @returns サーバーモード
+   * 
+   * @example
+   * ```javascript
+   * const mode = await api.getServerMode();
+   * if (mode === 'proxyOnly') {
+   *   api.info('プロキシ専用モードで動作中');
+   * }
+   * ```
+   */
+  getServerMode(): Promise<'normal' | 'proxyOnly'>;
+  
+  /**
+   * サーバー実行ファイルのパスを取得します
+   * プロキシ専用モードの場合はnullを返します
+   * 
+   * @returns 実行ファイルの絶対パス、またはnull
+   * 
+   * @example
+   * ```javascript
+   * const exePath = await api.getServerExecutablePath();
+   * if (exePath) {
+   *   api.info(`サーバー実行ファイル: ${exePath}`);
+   * } else {
+   *   api.info('プロキシ専用モード');
+   * }
+   * ```
+   */
+  getServerExecutablePath(): Promise<string | null>;
+  
+  /**
+   * サーバーディレクトリのパスを取得します
+   * 
+   * @returns サーバーディレクトリの絶対パス、またはnull
+   * 
+   * @example
+   * ```javascript
+   * const dir = await api.getServerDirectory();
+   * if (dir) {
+   *   api.info(`サーバーディレクトリ: ${dir}`);
+   * }
+   * ```
+   */
+  getServerDirectory(): Promise<string | null>;
+  
+  /**
+   * サーバーのserver.jsonファイルの内容を取得します
+   * サーバー設定情報（名前、アドレス、ポート等）が含まれます
+   * 
+   * @returns server.jsonの内容
+   * 
+   * @example
+   * ```javascript
+   * const config = await api.getServerConfig();
+   * api.info(`サーバー名: ${config.name}`);
+   * api.info(`リッスンアドレス: ${config.address}`);
+   * api.info(`転送先: ${config.destinationAddress}`);
+   * ```
+   */
+  getServerConfig(): Promise<ServerConfig>;
+  
+  /**
+   * 全てのロードされたプラグインの詳細情報を取得します
+   * プラグイン名、バージョン、有効状態などが含まれます
+   * 
+   * @returns プラグイン情報の配列
+   * 
+   * @example
+   * ```javascript
+   * const plugins = await api.getPluginInfo();
+   * plugins.forEach(plugin => {
+   *   api.info(`${plugin.name} v${plugin.version} - ${plugin.enabled ? '有効' : '無効'}`);
+   * });
+   * ```
+   */
+  getPluginInfo(): Promise<PluginInfo[]>;
+  
+  /**
+   * 特定のプラグインの詳細情報を取得します
+   * 
+   * @param pluginName - プラグイン名
+   * @returns プラグイン情報、見つからない場合はnull
+   * 
+   * @example
+   * ```javascript
+   * const info = await api.getPluginInfoByName('MyPlugin');
+   * if (info) {
+   *   api.info(`${info.name}: ${info.description}`);
+   * }
+   * ```
+   */
+  getPluginInfoByName(pluginName: string): Promise<PluginInfo | null>;
 }
+
+/**
+ * ネットワーク統計情報
+ */
+export interface NetworkStats {
+  /** 総送信バイト数 */
+  totalBytesSent: number;
+  /** 総受信バイト数 */
+  totalBytesReceived: number;
+  /** 総送信パケット数 */
+  totalPacketsSent: number;
+  /** 総受信パケット数 */
+  totalPacketsReceived: number;
+  /** 現在のアップロード速度（bytes/sec） */
+  currentUploadSpeed: number;
+  /** 現在のダウンロード速度（bytes/sec） */
+  currentDownloadSpeed: number;
+  /** アクティブ接続数 */
+  activeConnections: number;
+  /** 総接続数 */
+  totalConnections: number;
+  /** タイムスタンプ */
+  timestamp: number;
+}
+
+/**
+ * クライアントごとのネットワーク統計情報
+ */
+export interface ClientNetworkStats {
+  /** クライアントキー（"IP:PORT"） */
+  clientKey: string;
+  /** クライアントIPアドレス */
+  clientAddress: string;
+  /** クライアントポート */
+  clientPort: number;
+  /** 真のクライアントIPアドレス（Proxy Protocol使用時） */
+  realClientAddress?: string;
+  /** 真のクライアントポート（Proxy Protocol使用時） */
+  realClientPort?: number;
+  /** 送信バイト数 */
+  bytesSent: number;
+  /** 受信バイト数 */
+  bytesReceived: number;
+  /** 送信パケット数 */
+  packetsSent: number;
+  /** 受信パケット数 */
+  packetsReceived: number;
+  /** Ping（ミリ秒） */
+  pingMs?: number;
+  /** 最終Ping測定時刻 */
+  lastPingTime?: number;
+  /** 接続開始時刻 */
+  connectedAt: number;
+  /** 最終アクティビティ時刻 */
+  lastActivity: number;
+  /** アップロード速度（bytes/sec） */
+  uploadSpeed: number;
+  /** ダウンロード速度（bytes/sec） */
+  downloadSpeed: number;
+}
+
+/**
+ * サーバー設定情報
+ */
+export interface ServerConfig {
+  /** サーバーID */
+  id: string;
+  /** サーバー名 */
+  name: string;
+  /** リッスンアドレス */
+  address: string;
+  /** 転送先アドレス */
+  destinationAddress: string;
+  /** サーバーステータス */
+  status: string;
+  /** サーバーモード */
+  mode?: 'normal' | 'proxyOnly';
+  /** オンラインプレイヤー数 */
+  playersOnline: number;
+  /** 最大プレイヤー数 */
+  maxPlayers: number;
+  /** サーバーアイコンURL */
+  iconUrl?: string;
+  /** タグ */
+  tags?: string[];
+  /** 自動起動 */
+  autoStart?: boolean;
+  /** 自動再起動 */
+  autoRestart?: boolean;
+  /** 同一IP接続ブロック */
+  blockSameIP?: boolean;
+  /** 転送先アドレス（バックアップ） */
+  forwardAddress?: string;
+  /** Proxy Protocol v2有効化 */
+  proxyProtocolV2Enabled?: boolean;
+  /** プラグイン有効化 */
+  pluginsEnabled?: boolean;
+  /** 実行ファイルパス */
+  executablePath?: string;
+  /** サーバーディレクトリ */
+  serverDirectory?: string;
+  /** 作成日時 */
+  createdAt: Date;
+  /** 更新日時 */
+  updatedAt: Date;
+}
+
+/**
+ * プラグイン情報
+ */
+export interface PluginInfo {
+  /** プラグイン名 */
+  name: string;
+  /** バージョン */
+  version: string;
+  /** 説明 */
+  description?: string;
+  /** 作者 */
+  author?: string;
+  /** 有効状態 */
+  enabled: boolean;
+  /** ファイルパス */
+  filePath: string;
+  /** 依存プラグイン */
+  dependencies?: string[];
+  /** エラー情報（ロード失敗時） */
+  error?: string;
+}
+
