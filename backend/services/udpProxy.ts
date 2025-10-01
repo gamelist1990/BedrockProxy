@@ -17,17 +17,22 @@ export interface UDPProxyConfig {
   targetPort: number;
   timeout: number;
   proxyProtocolV2Enabled?: boolean; // Proxy Protocol v2サポートを有効化
+  maxConnections?: number; // 最大接続数制限(デフォルト: 1000)
+  rateLimit?: number; // クライアントごとの秒間パケット数制限(デフォルト: 100)
+  socketReuseEnabled?: boolean; // ソケット再利用を有効化(デフォルト: true)
 }
 
 export interface ProxyConnection {
   clientAddress: string;
   clientPort: number;
   targetSocket: Socket;
-  lastActivity: Date;
+  lastActivity: number; // Date型からnumber型(timestamp)に変更してメモリ効率化
   hasLoggedSuccess?: boolean;
   hasLoggedResponseSuccess?: boolean;
   realClientAddress?: string; // Proxy Protocol v2で解析された真のクライアントIP
   realClientPort?: number; // Proxy Protocol v2で解析された真のクライアントポート
+  packetCount?: number; // レート制限用のパケット数カウンター
+  lastReset?: number; // レート制限リセット時刻
 }
 
 export class UDPProxy {
@@ -37,20 +42,60 @@ export class UDPProxy {
   private config: UDPProxyConfig;
   private isRunning = false;
   private cleanupInterval: NodeJS.Timeout | null = null;
+  private sharedSocket: Socket | null = null; // 再利用される共有ソケット
+  private socketPool: Socket[] = []; // ソケットプール(高負荷時用)
+  private poolIndex = 0; // ラウンドロビン用インデックス
+  private readonly DEFAULT_MAX_CONNECTIONS = 1000;
+  private readonly DEFAULT_RATE_LIMIT = 100; // 秒間パケット数
+  private readonly SOCKET_POOL_SIZE = 10; // ソケットプールのサイズ
 
   // イベントハンドラー
   private onPlayerAction?: (packet: PlayerPacket) => void;
   private onConnectionActivity?: (clientIP: string, clientPort: number, data: Buffer) => void;
 
   constructor(config: UDPProxyConfig) {
-    this.config = config;
+    this.config = {
+      maxConnections: this.DEFAULT_MAX_CONNECTIONS,
+      rateLimit: this.DEFAULT_RATE_LIMIT,
+      socketReuseEnabled: true,
+      ...config
+    };
     this.server = createSocket('udp4');
+    // UDPソケットのバッファサイズを増やして高負荷に対応
+    this.server.setRecvBufferSize(1024 * 1024 * 4); // 4MB
+    this.server.setSendBufferSize(1024 * 1024 * 4); // 4MB
     this.setupServerEvents();
+    this.initializeSocketPool();
+  }
+
+  private initializeSocketPool(): void {
+    if (!this.config.socketReuseEnabled) return;
+
+    // 共有ソケットを作成
+    this.sharedSocket = createSocket('udp4');
+    this.sharedSocket.setRecvBufferSize(1024 * 1024 * 2);
+    this.sharedSocket.setSendBufferSize(1024 * 1024 * 2);
+    
+    // 高負荷用のソケットプールを作成
+    for (let i = 0; i < this.SOCKET_POOL_SIZE; i++) {
+      const socket = createSocket('udp4');
+      socket.setRecvBufferSize(1024 * 1024);
+      socket.setSendBufferSize(1024 * 1024);
+      this.socketPool.push(socket);
+    }
+
+    logger.info('udp-proxy', 'Socket pool initialized', {
+      poolSize: this.SOCKET_POOL_SIZE,
+      reuseEnabled: true
+    });
   }
 
   private setupServerEvents(): void {
     this.server.on('message', (data, rinfo) => {
-      this.handleClientMessage(data, rinfo.address, rinfo.port);
+      // 非同期処理で即座にリターンし、次のパケットを受信可能にする
+      setImmediate(() => {
+        this.handleClientMessage(data, rinfo.address, rinfo.port);
+      });
     });
 
     this.server.on('error', (error) => {
@@ -62,7 +107,9 @@ export class UDPProxy {
       logger.info('udp-proxy', 'UDP Proxy listening', {
         address: address?.address,
         port: address?.port,
-        target: `${this.config.targetHost}:${this.config.targetPort}`
+        target: `${this.config.targetHost}:${this.config.targetPort}`,
+        maxConnections: this.config.maxConnections,
+        rateLimit: this.config.rateLimit
       });
     });
   }
@@ -114,6 +161,7 @@ export class UDPProxy {
     }
 
     let connection = this.connections.get(connectionKey);
+    const now = Date.now();
     
     if (!connection) {
       // 新しい接続を作成
@@ -135,18 +183,40 @@ export class UDPProxy {
       
       connection.realClientAddress = realClientAddress;
       connection.realClientPort = realClientPort;
+      connection.packetCount = 0;
+      connection.lastReset = now;
       
       this.connections.set(connectionKey, connection);
       
       logger.info('udp-proxy', 'New connection established', {
         client: connectionKey,
         realClient: `${realClientAddress}:${realClientPort}`,
-        target: `${this.config.targetHost}:${this.config.targetPort}`
+        target: `${this.config.targetHost}:${this.config.targetPort}`,
+        totalConnections: this.connections.size
       });
     }
 
+    // レート制限チェック
+    if (this.config.rateLimit && connection.packetCount !== undefined && connection.lastReset !== undefined) {
+      const timeSinceReset = now - connection.lastReset;
+      if (timeSinceReset >= 1000) {
+        // 1秒経過したのでリセット
+        connection.packetCount = 0;
+        connection.lastReset = now;
+      } else if (connection.packetCount >= this.config.rateLimit) {
+        // レート制限超過
+        logger.warn('udp-proxy', 'Rate limit exceeded, dropping packet', {
+          client: connectionKey,
+          packetCount: connection.packetCount,
+          limit: this.config.rateLimit
+        });
+        return;
+      }
+      connection.packetCount++;
+    }
+
     // 最終アクティビティ時間を更新
-    connection.lastActivity = new Date();
+    connection.lastActivity = now;
 
     // メッセージを転送
     // 真のIPが取得できている場合は常にProxy Protocol v2ヘッダーを付加
@@ -195,12 +265,25 @@ export class UDPProxy {
   }
 
   private createConnection(clientAddress: string, clientPort: number): ProxyConnection {
-    const targetSocket = createSocket('udp4');
+    // ソケット再利用が有効な場合は共有ソケットまたはプールから取得
+    let targetSocket: Socket;
+    if (this.config.socketReuseEnabled && this.connections.size < 50) {
+      // 接続数が少ない場合は共有ソケットを使用
+      targetSocket = this.sharedSocket!;
+    } else if (this.config.socketReuseEnabled && this.socketPool.length > 0) {
+      // ラウンドロビンでプールからソケットを取得
+      targetSocket = this.socketPool[this.poolIndex];
+      this.poolIndex = (this.poolIndex + 1) % this.socketPool.length;
+    } else {
+      // 新しいソケットを作成(フォールバック)
+      targetSocket = createSocket('udp4');
+    }
+
     const connection: ProxyConnection = {
       clientAddress,
       clientPort,
       targetSocket,
-      lastActivity: new Date()
+      lastActivity: Date.now()
     };
     
     // ターゲットからのレスポンスを処理
@@ -282,9 +365,33 @@ export class UDPProxy {
 
       // すべての接続を閉じる
       this.connections.forEach((connection, key) => {
-        connection.targetSocket.close();
+        // ソケット再利用が無効な場合、または共有ソケット/プール以外の場合のみ閉じる
+        if (!this.config.socketReuseEnabled || 
+            (connection.targetSocket !== this.sharedSocket && 
+             !this.socketPool.includes(connection.targetSocket))) {
+          try {
+            connection.targetSocket.close();
+          } catch (e) {
+            // エラーを無視
+          }
+        }
         logger.debug('udp-proxy', 'Connection closed', { client: key });
       });
+      
+      // 共有ソケットとプールをクリーンアップ
+      if (this.sharedSocket) {
+        try {
+          this.sharedSocket.close();
+        } catch (e) {}
+        this.sharedSocket = null;
+      }
+      
+      this.socketPool.forEach(socket => {
+        try {
+          socket.close();
+        } catch (e) {}
+      });
+      this.socketPool = [];
       
       this.connections.clear();
       this.realClientInfo.clear();
@@ -305,15 +412,24 @@ export class UDPProxy {
   }
 
   private cleanupStaleConnections(): void {
-    const now = new Date();
+    const now = Date.now();
     const staleConnections: string[] = [];
 
     this.connections.forEach((connection, key) => {
-      const timeSinceLastActivity = now.getTime() - connection.lastActivity.getTime();
+      const timeSinceLastActivity = now - connection.lastActivity;
       
       if (timeSinceLastActivity > this.config.timeout) {
         staleConnections.push(key);
-        connection.targetSocket.close();
+        // ソケット再利用が有効な場合は、共有ソケットやプールのソケットは閉じない
+        if (!this.config.socketReuseEnabled || 
+            (connection.targetSocket !== this.sharedSocket && 
+             !this.socketPool.includes(connection.targetSocket))) {
+          try {
+            connection.targetSocket.close();
+          } catch (e) {
+            // ソケットが既に閉じている場合のエラーを無視
+          }
+        }
       }
     });
 
@@ -355,8 +471,10 @@ export class UDPProxy {
       config: this.config,
       connections: Array.from(this.connections.entries()).map(([key, conn]) => ({
         client: key,
-        lastActivity: conn.lastActivity,
-        timeSinceActivity: Date.now() - conn.lastActivity.getTime()
+        lastActivity: new Date(conn.lastActivity),
+        timeSinceActivity: Date.now() - conn.lastActivity,
+        packetCount: conn.packetCount || 0,
+        realClient: conn.realClientAddress ? `${conn.realClientAddress}:${conn.realClientPort}` : undefined
       }))
     };
   }
