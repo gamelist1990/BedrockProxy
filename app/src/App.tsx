@@ -1117,20 +1117,23 @@ function ServerList() {
                       width: 56,
                       height: 56,
                       boxShadow: 3,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
                       "&:hover": {
                         bgcolor: "primary.dark",
                         boxShadow: 6,
                       },
                     }}
                   >
-                    <Box sx={{ position: "relative" }}>
+                    <Box sx={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "center" }}>
                       <BugReportIcon />
                       {liveLogs.length > 0 && (
                         <Box
                           sx={{
                             position: "absolute",
-                            top: -8,
-                            right: -8,
+                            top: -12,
+                            right: -12,
                             bgcolor: "error.main",
                             color: "white",
                             borderRadius: "50%",

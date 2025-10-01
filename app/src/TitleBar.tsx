@@ -47,133 +47,85 @@ export default function TitleBar() {
         alignItems: "center",
         justifyContent: "space-between",
         height: "40px",
-        background: "linear-gradient(135deg, #f5f5f7 0%, #e8e8ed 100%)",
-        borderBottom: "1px solid #d1d1d6",
+        background: "linear-gradient(135deg, #1a73e8 0%, #1565c0 100%)",
+        borderBottom: "1px solid rgba(255, 255, 255, 0.1)",
         userSelect: "none",
         WebkitUserSelect: "none",
         WebkitAppRegion: "drag",
-        padding: "0 12px",
+        padding: "0 8px",
       }}
     >
-      {/* Mac-like window controls on the left */}
+      <Stack direction="row" spacing={1} alignItems="center" sx={{ pl: 1 }}>
+        <Typography
+          variant="subtitle2"
+          sx={{
+            color: "white",
+            fontWeight: 600,
+            fontSize: "14px",
+            letterSpacing: "0.5px",
+          }}
+        >
+          BedrockProxy
+        </Typography>
+      </Stack>
+
       <Stack
         direction="row"
-        spacing={0.75}
-        alignItems="center"
+        spacing={0}
+        className="titlebar-buttons"
         sx={{ WebkitAppRegion: "no-drag" }}
       >
         <IconButton
           size="small"
-          onClick={handleClose}
-          className="titlebar-button mac-button mac-close"
-          sx={{
-            width: "12px",
-            height: "12px",
-            minWidth: "12px",
-            minHeight: "12px",
-            padding: 0,
-            borderRadius: "50%",
-            backgroundColor: "#ff5f57",
-            border: "0.5px solid #e0443e",
-            "&:hover": {
-              backgroundColor: "#ff3b30",
-            },
-            "& svg": {
-              display: "none",
-            },
-            "&:hover svg": {
-              display: "block",
-              fontSize: "10px",
-              color: "#7d0e09",
-            },
-          }}
-        >
-          <CloseIcon />
-        </IconButton>
-
-        <IconButton
-          size="small"
           onClick={handleMinimize}
-          className="titlebar-button mac-button mac-minimize"
+          className="titlebar-button"
           sx={{
-            width: "12px",
-            height: "12px",
-            minWidth: "12px",
-            minHeight: "12px",
-            padding: 0,
-            borderRadius: "50%",
-            backgroundColor: "#ffbd2e",
-            border: "0.5px solid #dea123",
+            color: "white",
+            borderRadius: 0,
+            width: "46px",
+            height: "40px",
             "&:hover": {
-              backgroundColor: "#ffab00",
-            },
-            "& svg": {
-              display: "none",
-            },
-            "&:hover svg": {
-              display: "block",
-              fontSize: "10px",
-              color: "#995700",
+              backgroundColor: "rgba(255, 255, 255, 0.1)",
             },
           }}
         >
-          <MinimizeIcon />
+          <MinimizeIcon fontSize="small" />
         </IconButton>
 
         <IconButton
           size="small"
           onClick={handleMaximize}
-          className="titlebar-button mac-button mac-maximize"
+          className="titlebar-button"
           sx={{
-            width: "12px",
-            height: "12px",
-            minWidth: "12px",
-            minHeight: "12px",
-            padding: 0,
-            borderRadius: "50%",
-            backgroundColor: "#28c840",
-            border: "0.5px solid #1fa032",
+            color: "white",
+            borderRadius: 0,
+            width: "46px",
+            height: "40px",
             "&:hover": {
-              backgroundColor: "#20b038",
-            },
-            "& svg": {
-              display: "none",
-            },
-            "&:hover svg": {
-              display: "block",
-              fontSize: "10px",
-              color: "#006613",
+              backgroundColor: "rgba(255, 255, 255, 0.1)",
             },
           }}
         >
-          <MaximizeIcon />
+          <MaximizeIcon fontSize="small" />
+        </IconButton>
+
+        <IconButton
+          size="small"
+          onClick={handleClose}
+          className="titlebar-button titlebar-close"
+          sx={{
+            color: "white",
+            borderRadius: 0,
+            width: "46px",
+            height: "40px",
+            "&:hover": {
+              backgroundColor: "#e81123",
+            },
+          }}
+        >
+          <CloseIcon fontSize="small" />
         </IconButton>
       </Stack>
-
-      {/* Centered title */}
-      <Box
-        sx={{
-          position: "absolute",
-          left: "50%",
-          transform: "translateX(-50%)",
-          pointerEvents: "none",
-        }}
-      >
-        <Typography
-          variant="subtitle2"
-          sx={{
-            color: "#1d1d1f",
-            fontWeight: 600,
-            fontSize: "13px",
-            letterSpacing: "0.3px",
-          }}
-        >
-          BedrockProxy
-        </Typography>
-      </Box>
-
-      {/* Empty space for symmetry */}
-      <Box sx={{ width: "60px" }} />
     </Box>
   );
 }
