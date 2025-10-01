@@ -413,6 +413,39 @@ function ServerList() {
           setLiveLogs((prev) => [...prev, `Backend auto-start failed: ${data?.error ?? 'unknown'}`]);
         }
 
+        // If backend auto-start succeeded and global config.autoStart is enabled,
+        // attempt to auto-start servers that have autoRestart === true.
+        if (data?.success) {
+          try {
+            const cfg = await bedrockProxyAPI.getConfig().catch(() => null);
+            if (cfg && cfg.autoStart) {
+              try {
+                const allServers = await bedrockProxyAPI.getServers();
+                const toStart = allServers.filter((s) => s.autoRestart && s.status !== 'online');
+                if (toStart.length > 0) {
+                  setLiveLogs((prev) => [...prev, `Auto-start: starting ${toStart.length} server(s)...`]);
+                  const results = await Promise.allSettled(
+                    toStart.map((s) => bedrockProxyAPI.performServerAction(s.id, 'start'))
+                  );
+                  results.forEach((r, i) => {
+                    if (r.status === 'fulfilled') {
+                      setLiveLogs((prev) => [...prev, `Auto-start succeeded: ${toStart[i].name}`]);
+                    } else {
+                      setLiveLogs((prev) => [...prev, `Auto-start failed: ${toStart[i].name}: ${String((r as any).reason)}`]);
+                    }
+                  });
+                }
+              } catch (e) {
+                console.warn('Auto-start servers flow failed:', e);
+                setLiveLogs((prev) => [...prev, `Auto-start flow error: ${String(e)}`]);
+              }
+            }
+          } catch (e) {
+            // swallow config errors but log
+            console.warn('Failed to read config for autoStart check:', e);
+          }
+        }
+
         // Try to ensure connection and refresh data
         try {
           await bedrockProxyAPI.connect();
