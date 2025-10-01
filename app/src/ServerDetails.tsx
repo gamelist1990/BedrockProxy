@@ -59,7 +59,7 @@ const pickEmoji = (serverId: string) => {
   return fallbackEmojis[index % fallbackEmojis.length];
 };
 
-type DetailTab = "overview" | "players" | "console" | "operations";
+type DetailTab = "overview" | "players" | "console" | "operations" | "plugins";
 
 // Note: DETAIL_TABS now uses translation function inside component
 // const DETAIL_TABS will be defined inside the component to access t() function
@@ -120,6 +120,11 @@ function ServerDetails() {
   // Confirmation dialog for unsaved changes
   const [showUnsavedDialog, setShowUnsavedDialog] = useState(false);
   const [pendingNavigation, setPendingNavigation] = useState<string | null>(null);
+  
+  // Plugin management state
+  const [pluginsEnabled, setPluginsEnabled] = useState(false);
+  const [plugins, setPlugins] = useState<any[]>([]);
+  const [loadingPlugins, setLoadingPlugins] = useState(false);
 
   // Editable basic settings (controlled inputs)
   const [editName, setEditName] = useState<string>("");
@@ -568,6 +573,7 @@ function ServerDetails() {
     { value: "players", label: t("tab.players") },
     { value: "console", label: t("tab.console") },
     { value: "operations", label: t("tab.operations") },
+    { value: "plugins", label: t("tab.plugins") || "プラグイン" },
   ];
 
   const statusLabel: Record<ServerStatus, string> = {
@@ -1273,6 +1279,127 @@ function ServerDetails() {
                       <Typography variant="caption" className="muted">{t('settings.showPlayerIPsDesc') || 'プライバシー保護のためデフォルトでは無効。サーバーごとに保存されます。'}</Typography>
                     </Box>}
                   />
+                </Box>
+              </Stack>
+            </CardContent>
+          </TabPanel>
+          
+          {/* Plugins Tab */}
+          <TabPanel value="plugins" current={activeTab}>
+            <CardContent className="tab-panel-content">
+              <Stack spacing={4}>
+                <Box>
+                  <Typography variant="subtitle2" className="section-title">
+                    {t('plugins.title') || 'プラグイン管理'}
+                  </Typography>
+                  <Typography variant="body2" className="muted">
+                    {t('plugins.description') || 'サーバーの機能を拡張するプラグインを管理します。'}
+                  </Typography>
+                </Box>
+                
+                {/* Enable Plugins Toggle */}
+                <Box>
+                  <FormControlLabel
+                    control={
+                      <Switch
+                        checked={pluginsEnabled}
+                        onChange={(e) => setPluginsEnabled(e.target.checked)}
+                        color="primary"
+                      />
+                    }
+                    label={
+                      <Box>
+                        <Typography variant="body2">{t('plugins.enablePlugins') || 'プラグインを有効化'}</Typography>
+                        <Typography variant="caption" className="muted">
+                          {t('plugins.enableDesc') || 'プラグインシステムを有効にします。Node.jsが必要です。'}
+                        </Typography>
+                      </Box>
+                    }
+                  />
+                </Box>
+                
+                <Divider />
+                
+                {/* Plugins List */}
+                {pluginsEnabled ? (
+                  <Box>
+                    <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 2 }}>
+                      <Typography variant="subtitle2" className="section-title">
+                        {t('plugins.installedPlugins') || 'インストール済みプラグイン'}
+                      </Typography>
+                      <Button
+                        variant="outlined"
+                        size="small"
+                        onClick={() => {
+                          setLoadingPlugins(true);
+                          // TODO: Load plugins from backend
+                          setTimeout(() => {
+                            setLoadingPlugins(false);
+                            setSnackbarMessage(t('plugins.refreshed') || 'プラグインリストを更新しました');
+                            setSnackbarSeverity('info');
+                            setSnackbarOpen(true);
+                          }, 500);
+                        }}
+                        disabled={loadingPlugins}
+                      >
+                        {loadingPlugins ? (
+                          <CircularProgress size={16} sx={{ mr: 1 }} />
+                        ) : null}
+                        {t('plugins.refresh') || '更新'}
+                      </Button>
+                    </Stack>
+                    
+                    {plugins.length === 0 ? (
+                      <Alert severity="info">
+                        {t('plugins.noPlugins') || 'プラグインが見つかりません。PEXData/plugins/ フォルダにJSファイルを配置してください。'}
+                      </Alert>
+                    ) : (
+                      <Stack spacing={2}>
+                        {plugins.map((plugin, index) => (
+                          <Card key={index} variant="outlined" sx={{ p: 2 }}>
+                            <Stack direction="row" justifyContent="space-between" alignItems="center">
+                              <Box>
+                                <Typography variant="subtitle2" fontWeight={600}>
+                                  {plugin.name || 'Unknown Plugin'}
+                                </Typography>
+                                <Typography variant="caption" className="muted">
+                                  v{plugin.version || '1.0.0'} {plugin.author ? `by ${plugin.author}` : ''}
+                                </Typography>
+                                {plugin.description && (
+                                  <Typography variant="body2" sx={{ mt: 0.5 }}>
+                                    {plugin.description}
+                                  </Typography>
+                                )}
+                              </Box>
+                              <Switch
+                                checked={plugin.enabled || false}
+                                onChange={(e) => {
+                                  // TODO: Toggle plugin enabled state
+                                  const updated = [...plugins];
+                                  updated[index].enabled = e.target.checked;
+                                  setPlugins(updated);
+                                }}
+                                color="primary"
+                              />
+                            </Stack>
+                          </Card>
+                        ))}
+                      </Stack>
+                    )}
+                  </Box>
+                ) : (
+                  <Alert severity="warning">
+                    {t('plugins.disabled') || 'プラグインシステムが無効です。有効にしてプラグインを管理してください。'}
+                  </Alert>
+                )}
+                
+                <Box>
+                  <Typography variant="caption" className="muted" display="block">
+                    {t('plugins.requirement') || '注意: プラグインを使用するにはNode.jsがインストールされている必要があります。'}
+                  </Typography>
+                  <Typography variant="caption" className="muted" display="block" sx={{ mt: 0.5 }}>
+                    {t('plugins.folder') || 'プラグインの配置場所: PEXData/plugins/'}
+                  </Typography>
                 </Box>
               </Stack>
             </CardContent>
