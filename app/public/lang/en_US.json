@@ -29,6 +29,8 @@
   "overview.autoRestart": "Auto Restart",
   "overview.autoRestartDesc": "Automatically restart the server when it crashes",
   "overview.proxyConfig": "Proxy Configuration",
+  "overview.proxyProtocolV2": "Proxy Protocol v2 Support",
+  "overview.proxyProtocolV2Desc": "Parse Proxy Protocol v2 headers to extract real client IP addresses",
   "overview.receivingPort": "Receiving Port",
   "overview.receivingPortDesc": "Port where proxy server accepts player connections",
   "overview.destinationPort": "Destination Port",

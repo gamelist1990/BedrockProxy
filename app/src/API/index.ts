@@ -39,6 +39,7 @@ export interface Server {
   autoRestart?: boolean;
   blockSameIP?: boolean;
   forwardAddress?: string;
+  proxyProtocolV2Enabled?: boolean; // Proxy Protocol v2サポート
   pluginsEnabled?: boolean;
   plugins?: Record<string, any>; // プラグイン設定（プラグインID -> 設定オブジェクト）
   description?: string;
@@ -72,6 +73,7 @@ const DEFAULT_SERVER_FIELDS: Partial<Server> = {
   autoStart: false,
   autoRestart: false,
   blockSameIP: false,
+  proxyProtocolV2Enabled: false,
   pluginsEnabled: false,
   plugins: {},
   players: [],

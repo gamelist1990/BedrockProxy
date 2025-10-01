@@ -42,6 +42,7 @@ export class DataStorage {
     autoStart: false,
     autoRestart: false,
     blockSameIP: false,
+    proxyProtocolV2Enabled: false,
     pluginsEnabled: false,
     plugins: {},
     players: [],

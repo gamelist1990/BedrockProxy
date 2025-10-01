@@ -365,7 +365,8 @@ export class ServerManager {
               listenPort: parseInt(bindPort),
               targetHost: destIP,
               targetPort: parseInt(destPort),
-              timeout: 30000
+              timeout: 30000,
+              proxyProtocolV2Enabled: server.proxyProtocolV2Enabled ?? false
             });
             udpProxy.setConnectionActivityHandler((clientIP, clientPort /*, data */) => {
               try {
@@ -784,7 +785,8 @@ export class ServerManager {
           listenPort: parseInt(bindPort),
           targetHost: destIP,
           targetPort: parseInt(destPort),
-          timeout: 30000
+          timeout: 30000,
+          proxyProtocolV2Enabled: server.proxyProtocolV2Enabled ?? false
         });
 
         // Register connection activity handler to keep a lightweight recent-activity map

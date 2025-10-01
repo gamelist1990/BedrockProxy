@@ -120,6 +120,7 @@ function ServerDetails() {
   const [forwardAddress, setForwardAddress] = useState("");
   const [customForwardAddress, setCustomForwardAddress] = useState("");
   const [blockSameIP, setBlockSameIP] = useState(false);
+  const [proxyProtocolV2Enabled, setProxyProtocolV2Enabled] = useState(false);
   // プレイヤーIP表示設定（プライバシー配慮のためデフォルトは false）
   const [showPlayerIPs, setShowPlayerIPs] = useState(false);
 
@@ -130,6 +131,7 @@ function ServerDetails() {
     autoRestart: false,
     blockSameIP: false,
     forwardAddress: "",
+    proxyProtocolV2Enabled: false,
   });
 
   // Confirmation dialog for unsaved changes
@@ -254,12 +256,14 @@ function ServerDetails() {
       const initialAutoRestart = data.server.autoRestart ?? false;
       const initialForwardAddress = data.server.forwardAddress ?? "";
       const initialBlockSameIP = data.server.blockSameIP ?? false;
+      const initialProxyProtocolV2Enabled = data.server.proxyProtocolV2Enabled ?? false;
       const initialPluginsEnabled = data.server.pluginsEnabled ?? false;
 
       setAutoStart(initialAutoStart);
       setAutoRestart(initialAutoRestart);
       setForwardAddress(initialForwardAddress);
       setBlockSameIP(initialBlockSameIP);
+      setProxyProtocolV2Enabled(initialProxyProtocolV2Enabled);
       setPluginsEnabled(initialPluginsEnabled);
 
       // Auto-load plugins if plugin tab is active and plugins are enabled
@@ -274,6 +278,7 @@ function ServerDetails() {
         autoRestart: initialAutoRestart,
         blockSameIP: initialBlockSameIP,
         forwardAddress: initialForwardAddress,
+        proxyProtocolV2Enabled: initialProxyProtocolV2Enabled,
       });
       setHasUnsavedOperations(false);
 
@@ -324,6 +329,8 @@ function ServerDetails() {
           setAutoRestart(data.server.autoRestart);
         if (data.server.blockSameIP !== undefined)
           setBlockSameIP(data.server.blockSameIP);
+        if (data.server.proxyProtocolV2Enabled !== undefined)
+          setProxyProtocolV2Enabled(data.server.proxyProtocolV2Enabled);
         if (data.server.forwardAddress !== undefined)
           setForwardAddress(data.server.forwardAddress);
       }
@@ -343,6 +350,8 @@ function ServerDetails() {
             setAutoRestart(data.server.autoRestart);
           if (data.server.blockSameIP !== undefined)
             setBlockSameIP(data.server.blockSameIP);
+          if (data.server.proxyProtocolV2Enabled !== undefined)
+            setProxyProtocolV2Enabled(data.server.proxyProtocolV2Enabled);
           if (data.server.forwardAddress !== undefined)
             setForwardAddress(data.server.forwardAddress);
         }
@@ -715,6 +724,9 @@ function ServerDetails() {
       case "blockSameIP":
         setBlockSameIP(value);
         break;
+      case "proxyProtocolV2Enabled":
+        setProxyProtocolV2Enabled(value);
+        break;
       case "forwardAddress":
         setForwardAddress(value);
         break;
@@ -724,19 +736,24 @@ function ServerDetails() {
   // Save operations settings
   const handleSaveOperations = async () => {
     try {
-      await bedrockProxyAPI.updateServer(server.id, {
+      const updatedServer = await bedrockProxyAPI.updateServer(server.id, {
         autoStart,
         autoRestart,
         blockSameIP,
+        proxyProtocolV2Enabled,
         forwardAddress:
           forwardAddress === "custom" ? customForwardAddress : forwardAddress,
       });
+
+      // 即座にローカルステートを更新
+      setServer(updatedServer);
 
       setSavedOperationsState({
         autoStart,
         autoRestart,
         blockSameIP,
         forwardAddress,
+        proxyProtocolV2Enabled,
       });
       setHasUnsavedOperations(false);
 
@@ -1784,6 +1801,30 @@ function ServerDetails() {
                           </Typography>
                           <Typography variant="caption" className="muted">
                             {t("operations.blockSameIPDesc")}
+                          </Typography>
+                        </Box>
+                      }
+                    />
+                    <FormControlLabel
+                      control={
+                        <Switch
+                          checked={proxyProtocolV2Enabled}
+                          onChange={(e) => {
+                            handleOperationChange(
+                              "proxyProtocolV2Enabled",
+                              e.target.checked
+                            );
+                          }}
+                          color="primary"
+                        />
+                      }
+                      label={
+                        <Box>
+                          <Typography variant="body2">
+                            {t("overview.proxyProtocolV2")}
+                          </Typography>
+                          <Typography variant="caption" className="muted">
+                            {t("overview.proxyProtocolV2Desc")}
                           </Typography>
                         </Box>
                       }

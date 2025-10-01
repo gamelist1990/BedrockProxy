@@ -35,6 +35,8 @@ export const ja_JP = {
   "overview.autoRestart": "自動再起動",
   "overview.autoRestartDesc": "サーバーがクラッシュした場合に自動的に再起動します",
   "overview.proxyConfig": "プロキシ設定",
+  "overview.proxyProtocolV2": "Proxy Protocol v2 サポート",
+  "overview.proxyProtocolV2Desc": "Proxy Protocol v2 ヘッダーを解析して真のクライアントIPを取得します",
   "overview.receivingPort": "受信ポート",
   "overview.receivingPortDesc": "プロキシサーバーがプレイヤー接続を受け付けるポート",
   "overview.destinationPort": "転送先ポート",
