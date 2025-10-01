@@ -181,15 +181,28 @@
 }
 
 .overview-grid {
-  margin-top: 4px;
+  margin-top: 8px;
 }
 
 .form-stack {
-  gap: 16px;
+  gap: 18px;
 }
 
 .form-field {
   margin-top: 0;
+}
+
+.form-stack .MuiButton-contained {
+  min-width: 120px;
+  padding: 10px 24px;
+  font-weight: 600;
+  box-shadow: 0 2px 8px rgba(26,115,232,0.2);
+  transition: all 0.2s ease;
+}
+
+.form-stack .MuiButton-contained:hover {
+  box-shadow: 0 4px 12px rgba(26,115,232,0.3);
+  transform: translateY(-1px);
 }
 
 .overview-secondary {
@@ -344,29 +357,39 @@
   background: rgba(96, 165, 250, 0.45);
 }
 
+.operations-panel {
+  padding: 24px;
+}
+
 .operations-panel .muted {
-  max-width: 420px;
+  max-width: 560px;
+  line-height: 1.6;
 }
 
 .action-row {
   padding: 0;
+  gap: 12px;
 }
 
 .action-button {
   border: 1px solid rgba(26,115,232,0.25);
   background: rgba(26,115,232,0.06);
-  transition: background 0.2s ease, transform 0.2s ease;
+  transition: background 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
+  min-width: 56px;
+  min-height: 56px;
 }
 
 .action-button:hover {
   background: rgba(26,115,232,0.14);
   transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(26,115,232,0.15);
 }
 
 .action-button:disabled {
   background: rgba(148, 163, 184, 0.16);
   border-color: rgba(148, 163, 184, 0.25);
   color: rgba(148, 163, 184, 0.8);
+  transform: none;
 }
 
 .muted {
@@ -374,25 +397,38 @@
 }
 
 .auto-settings {
-  background: #f8fafc;
+  background: linear-gradient(135deg, #f8fafc 0%, #ffffff 100%);
   border: 1px solid var(--border);
   border-radius: 12px;
-  padding: 20px;
+  padding: 24px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+
+.auto-settings .MuiFormControlLabel-root {
+  margin: 0;
+  padding: 12px;
+  border-radius: 8px;
+  transition: background 0.2s ease;
+}
+
+.auto-settings .MuiFormControlLabel-root:hover {
+  background: rgba(26,115,232,0.04);
 }
 
 .forward-settings {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 10px;
-  padding: 16px;
-}
-
-.forward-input {
+  padding: 20px;
   margin-top: 8px;
 }
 
+.forward-input {
+  margin-top: 12px;
+}
+
 .forward-select {
-  margin-bottom: 8px;
+  margin-bottom: 12px;
 }
 
 .proxy-config {
@@ -428,6 +464,18 @@
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, "Roboto Mono", "Segoe UI Mono", monospace;
   color: #e6eef8;
   white-space: pre-wrap;
+}
+
+/* Hide scrollbar for console output div */
+.console-output::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
+}
+
+.console-output {
+  -ms-overflow-style: none;  /* IE and Edge */
+  scrollbar-width: none;  /* Firefox */
 }
 
 .console-line {
