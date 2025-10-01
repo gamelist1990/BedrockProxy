@@ -29,6 +29,11 @@ import {
   Alert,
   Snackbar,
   Button,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogContentText,
+  DialogActions,
 } from "@mui/material";
 import ArrowBackRoundedIcon from "@mui/icons-material/ArrowBackRounded";
 import { useLanguageContext } from "./contexts/LanguageContext";
@@ -102,6 +107,19 @@ function ServerDetails() {
   const [blockSameIP, setBlockSameIP] = useState(false);
   // プレイヤーIP表示設定（プライバシー配慮のためデフォルトは false）
   const [showPlayerIPs, setShowPlayerIPs] = useState(false);
+  
+  // Track unsaved changes in operations tab
+  const [hasUnsavedOperations, setHasUnsavedOperations] = useState(false);
+  const [savedOperationsState, setSavedOperationsState] = useState({
+    autoStart: false,
+    autoRestart: false,
+    blockSameIP: false,
+    forwardAddress: ""
+  });
+  
+  // Confirmation dialog for unsaved changes
+  const [showUnsavedDialog, setShowUnsavedDialog] = useState(false);
+  const [pendingNavigation, setPendingNavigation] = useState<string | null>(null);
 
   // Editable basic settings (controlled inputs)
   const [editName, setEditName] = useState<string>("");
@@ -162,10 +180,24 @@ function ServerDetails() {
       
       // 設定値を初期化
       setTags(data.server.tags ?? []);
-      setAutoStart(data.server.autoStart ?? false);
-      setAutoRestart(data.server.autoRestart ?? false);
-      setForwardAddress(data.server.forwardAddress ?? "");
-      setBlockSameIP(data.server.blockSameIP ?? false);
+      const initialAutoStart = data.server.autoStart ?? false;
+      const initialAutoRestart = data.server.autoRestart ?? false;
+      const initialForwardAddress = data.server.forwardAddress ?? "";
+      const initialBlockSameIP = data.server.blockSameIP ?? false;
+      
+      setAutoStart(initialAutoStart);
+      setAutoRestart(initialAutoRestart);
+      setForwardAddress(initialForwardAddress);
+      setBlockSameIP(initialBlockSameIP);
+      
+      // Set saved operations state
+      setSavedOperationsState({
+        autoStart: initialAutoStart,
+        autoRestart: initialAutoRestart,
+        blockSameIP: initialBlockSameIP,
+        forwardAddress: initialForwardAddress
+      });
+      setHasUnsavedOperations(false);
       
       // コンソールログを取得
       try {
@@ -401,6 +433,92 @@ function ServerDetails() {
     }
   };
   
+  // Track operations changes without auto-saving
+  const handleOperationChange = (field: string, value: any) => {
+    setHasUnsavedOperations(true);
+    switch (field) {
+      case 'autoStart':
+        setAutoStart(value);
+        break;
+      case 'autoRestart':
+        setAutoRestart(value);
+        break;
+      case 'blockSameIP':
+        setBlockSameIP(value);
+        break;
+      case 'forwardAddress':
+        setForwardAddress(value);
+        break;
+    }
+  };
+  
+  // Save operations settings
+  const handleSaveOperations = async () => {
+    try {
+      await bedrockProxyAPI.updateServer(server.id, {
+        autoStart,
+        autoRestart,
+        blockSameIP,
+        forwardAddress: forwardAddress === 'custom' ? customForwardAddress : forwardAddress
+      });
+      
+      setSavedOperationsState({
+        autoStart,
+        autoRestart,
+        blockSameIP,
+        forwardAddress
+      });
+      setHasUnsavedOperations(false);
+      
+      setSnackbarMessage(t('settings.saveSuccess') || 'Operations settings saved successfully!');
+      setSnackbarSeverity('success');
+      setSnackbarOpen(true);
+    } catch (error) {
+      console.error('❌ Failed to save operations settings:', error);
+      setSnackbarMessage(t('settings.saveFailed') || 'Failed to save operations settings');
+      setSnackbarSeverity('error');
+      setSnackbarOpen(true);
+    }
+  };
+  
+  // Handle tab change with unsaved check
+  const handleTabChange = (newTab: DetailTab) => {
+    if (activeTab === 'operations' && hasUnsavedOperations) {
+      setPendingNavigation(newTab);
+      setShowUnsavedDialog(true);
+    } else {
+      setActiveTab(newTab);
+    }
+  };
+  
+  // Handle navigation with unsaved check
+  const handleNavigateHome = () => {
+    if (activeTab === 'operations' && hasUnsavedOperations) {
+      setPendingNavigation('home');
+      setShowUnsavedDialog(true);
+    } else {
+      navigate("/");
+    }
+  };
+  
+  // Confirm unsaved changes
+  const handleConfirmNavigation = async (save: boolean) => {
+    if (save) {
+      await handleSaveOperations();
+    }
+    
+    setShowUnsavedDialog(false);
+    
+    if (pendingNavigation === 'home') {
+      navigate("/");
+    } else if (pendingNavigation) {
+      setActiveTab(pendingNavigation as DetailTab);
+    }
+    
+    setPendingNavigation(null);
+    setHasUnsavedOperations(false);
+  };
+  
   // コンソールコマンド送信
   const handleConsoleCommand = async (command: string) => {
     try {
@@ -465,7 +583,7 @@ function ServerDetails() {
       <Stack spacing={6} className="content-wrapper">
         <Stack spacing={1.5} className="page-header">
           <Stack direction="row" alignItems="center" spacing={2}>
-            <IconButton onClick={() => navigate("/")}>
+            <IconButton onClick={handleNavigateHome}>
               <ArrowBackRoundedIcon />
             </IconButton>
             <Typography variant="h5" fontWeight={600}>
@@ -583,7 +701,7 @@ function ServerDetails() {
 
           <Tabs
             value={activeTab}
-            onChange={(_, value) => setActiveTab(value as DetailTab)}
+            onChange={(_, value) => handleTabChange(value as DetailTab)}
             aria-label="サーバー詳細タブ"
             className="details-tabs"
             variant="scrollable"
@@ -1028,9 +1146,7 @@ function ServerDetails() {
                         <Switch 
                           checked={autoStart} 
                           onChange={(e) => {
-                            const newValue = e.target.checked;
-                            setAutoStart(newValue);
-                            handleSettingChange({ autoStart: newValue });
+                            handleOperationChange('autoStart', e.target.checked);
                           }}
                           color="primary"
                         />
@@ -1049,9 +1165,7 @@ function ServerDetails() {
                         <Switch 
                           checked={autoRestart} 
                           onChange={(e) => {
-                            const newValue = e.target.checked;
-                            setAutoRestart(newValue);
-                            handleSettingChange({ autoRestart: newValue });
+                            handleOperationChange('autoRestart', e.target.checked);
                           }}
                           color="primary"
                         />
@@ -1070,9 +1184,7 @@ function ServerDetails() {
                         <Switch
                           checked={blockSameIP}
                           onChange={(e) => {
-                            const newValue = e.target.checked;
-                            setBlockSameIP(newValue);
-                            handleSettingChange({ blockSameIP: newValue });
+                            handleOperationChange('blockSameIP', e.target.checked);
                           }}
                           color="primary"
                         />
@@ -1099,9 +1211,7 @@ function ServerDetails() {
                         <Select
                           value={forwardAddress}
                           onChange={(e) => {
-                            const newValue = e.target.value;
-                            setForwardAddress(newValue);
-                            handleSettingChange({ forwardAddress: newValue });
+                            handleOperationChange('forwardAddress', e.target.value);
                           }}
                           label={t('settings.backupDestination')}
                         >
@@ -1133,6 +1243,20 @@ function ServerDetails() {
                     </Box>
                   </Stack>
                 </Box>
+                
+                {/* Save Operations Button */}
+                <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 2 }}>
+                  <Button
+                    variant="contained"
+                    color="primary"
+                    startIcon={<SaveIcon />}
+                    onClick={handleSaveOperations}
+                    disabled={!hasUnsavedOperations}
+                  >
+                    {t('form.save')}
+                  </Button>
+                </Box>
+                
                 <Divider />
                 <Box sx={{ mt: 2 }}>
                   <Typography variant="subtitle2" className="section-title">{t('settings.playerList')}</Typography>
@@ -1155,6 +1279,28 @@ function ServerDetails() {
           </TabPanel>
         </Card>
       </Stack>
+      
+      {/* Unsaved Changes Dialog */}
+      <Dialog
+        open={showUnsavedDialog}
+        onClose={() => setShowUnsavedDialog(false)}
+      >
+        <DialogTitle>{t('common.unsavedChanges') || '未保存の変更があります'}</DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            {t('common.unsavedChangesMessage') || '操作パネルに未保存の変更があります。保存しますか？'}
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => handleConfirmNavigation(false)} color="inherit">
+            {t('common.cancel') || 'キャンセル'}
+          </Button>
+          <Button onClick={() => handleConfirmNavigation(true)} color="primary" variant="contained">
+            {t('common.save') || '保存'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+      
       <Snackbar open={snackbarOpen} autoHideDuration={6000} onClose={() => setSnackbarOpen(false)}>
         <Alert onClose={() => setSnackbarOpen(false)} severity={snackbarSeverity} sx={{ width: '100%' }}>
           {snackbarMessage}
