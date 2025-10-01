@@ -5,6 +5,7 @@ import { Command } from '@tauri-apps/plugin-shell';
 import type { ConnectionEventType } from './connectionManager.js';
 
 export type ServerStatus = "online" | "offline" | "starting" | "stopping" | "error";
+export type ServerMode = "normal" | "proxyOnly"; // Server operation mode
 
 export interface Player {
   id: string;
@@ -14,12 +15,22 @@ export interface Player {
   port?: number;
 }
 
+export interface UDPConnection {
+  id: string;
+  ipAddress: string;
+  port: number;
+  connectTime: Date;
+  disconnectTime?: Date;
+  isActive: boolean;
+}
+
 export interface Server {
   id: string;
   name: string;
   address: string;
   destinationAddress: string;
   status: ServerStatus;
+  mode?: ServerMode; // Operation mode
   playersOnline: number;
   maxPlayers: number;
   iconUrl?: string;
@@ -28,9 +39,11 @@ export interface Server {
   autoRestart?: boolean;
   blockSameIP?: boolean;
   forwardAddress?: string;
+  pluginsEnabled?: boolean;
   description?: string;
   docs?: string;
   players?: Player[];
+  udpConnections?: UDPConnection[]; // For Proxy Only mode
   executablePath?: string;
   serverDirectory?: string;
   createdAt: Date;
