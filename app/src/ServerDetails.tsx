@@ -449,6 +449,8 @@ function ServerDetails() {
     [server]
   );
 
+  // ...existing code...
+
   // 初期化とイベント処理
   useEffect(() => {
     let isMounted = true;
@@ -690,87 +692,72 @@ function ServerDetails() {
   };
 
   // Load plugins function (shared between manual refresh and auto-load)
-  const loadPluginsData = useCallback(
-    async (showMessages: boolean = true) => {
-      if (!server?.id) return;
+  const loadPluginsData = async (showMessages: boolean = true) => {
+    if (!server?.id) return;
 
-      console.log("[Plugin Auto-Load] Starting plugin reload...");
+    console.log("[Plugin Auto-Load] Starting plugin reload...");
 
-      // Wait for WebSocket connection to be established
+    // Wait for WebSocket connection to be established
+    if (!bedrockProxyAPI.isConnected()) {
+      console.log("[Plugin Auto-Load] Waiting for WebSocket connection...");
+      let attempts = 0;
+      const maxAttempts = 30; // 3 seconds max wait
+
+      while (!bedrockProxyAPI.isConnected() && attempts < maxAttempts) {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        attempts++;
+      }
+
       if (!bedrockProxyAPI.isConnected()) {
-        console.log("[Plugin Auto-Load] Waiting for WebSocket connection...");
-        let attempts = 0;
-        const maxAttempts = 30; // 3 seconds max wait
-
-        while (!bedrockProxyAPI.isConnected() && attempts < maxAttempts) {
-          await new Promise((resolve) => setTimeout(resolve, 100));
-          attempts++;
-        }
-
-        if (!bedrockProxyAPI.isConnected()) {
-          console.warn(
-            "[Plugin Auto-Load] WebSocket connection timeout, skipping plugin load"
-          );
-          return;
-        }
-      }
-
-      setLoadingPlugins(true);
-
-      try {
-        const systemInfo = await bedrockProxyAPI.getSystemInfo();
-        console.log(
-          "[Plugin Auto-Load] Plugin directory:",
-          systemInfo.pluginsDirectory
+        console.warn(
+          "[Plugin Auto-Load] WebSocket connection timeout, skipping plugin load"
         );
-
-        // Load plugins from backend
-        console.log(
-          "[Plugin Auto-Load] Loading plugins for server:",
-          server.id
-        );
-        const loadedPlugins = await bedrockProxyAPI.loadPlugins(server.id);
-        console.log("[Plugin Auto-Load] Loaded plugins:", loadedPlugins);
-
-        // Update state so plugins display in UI
-        setPlugins(loadedPlugins);
-
-        if (showMessages) {
-          setSnackbarMessage(
-            `${t("plugins.refreshed") || "プラグインリストを更新しました"} (${
-              loadedPlugins.length
-            }件)`
-          );
-          setSnackbarSeverity("success");
-          setSnackbarOpen(true);
-        }
-      } catch (error) {
-        console.error("[Plugin Auto-Load] Failed to load plugins:", error);
-        if (showMessages) {
-          setSnackbarMessage(
-            t("plugins.refreshFailed") || "プラグインの読み込みに失敗しました"
-          );
-          setSnackbarSeverity("error");
-          setSnackbarOpen(true);
-        }
-      } finally {
-        setLoadingPlugins(false);
+        return;
       }
-    },
-    [server?.id, t]
-  );
-
-  // Auto-load plugins when plugins are enabled and plugin tab is active
-  useEffect(() => {
-    if (
-      pluginsEnabled &&
-      activeTab === "plugins" &&
-      server?.id &&
-      plugins.length === 0
-    ) {
-      loadPluginsData(false);
     }
-  }, [pluginsEnabled, activeTab, server?.id, plugins.length, loadPluginsData]);
+
+    setLoadingPlugins(true);
+
+    try {
+      const systemInfo = await bedrockProxyAPI.getSystemInfo();
+      console.log(
+        "[Plugin Auto-Load] Plugin directory:",
+        systemInfo.pluginsDirectory
+      );
+
+      // Load plugins from backend
+      console.log(
+        "[Plugin Auto-Load] Loading plugins for server:",
+        server.id
+      );
+      const loadedPlugins = await bedrockProxyAPI.loadPlugins(server.id);
+      console.log("[Plugin Auto-Load] Loaded plugins:", loadedPlugins);
+
+      // Update state so plugins display in UI
+      setPlugins(loadedPlugins);
+
+      if (showMessages) {
+        setSnackbarMessage(
+          `${t("plugins.refreshed") || "プラグインリストを更新しました"} (${
+            loadedPlugins.length
+          }件)`
+        );
+        setSnackbarSeverity("success");
+        setSnackbarOpen(true);
+      }
+    } catch (error) {
+      console.error("[Plugin Auto-Load] Failed to load plugins:", error);
+      if (showMessages) {
+        setSnackbarMessage(
+          t("plugins.refreshFailed") || "プラグインの読み込みに失敗しました"
+        );
+        setSnackbarSeverity("error");
+        setSnackbarOpen(true);
+      }
+    } finally {
+      setLoadingPlugins(false);
+    }
+  };
 
   // Handle tab change with unsaved check and auto-load plugins
   const handleTabChange = (newTab: DetailTab) => {
