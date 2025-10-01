@@ -44,6 +44,7 @@ import { resourceDir } from '@tauri-apps/api/path';
 import { Command } from '@tauri-apps/plugin-shell';
 import { listen } from '@tauri-apps/api/event';
 import ServerDetails from "./ServerDetails";
+import TitleBar from "./TitleBar";
 import "./css/App.css";
 import ServerAvatar from './components/ServerAvatar';
 
@@ -84,6 +85,12 @@ function ServerList() {
   const [connectionState, setConnectionState] = useState<string | null>(null);
   const [latency, setLatency] = useState<number | null>(null);
   const [liveLogs, setLiveLogs] = useState<string[]>([]);
+  const [isTauri, setIsTauri] = useState(false);
+
+  // Check if running in Tauri
+  useEffect(() => {
+    setIsTauri(typeof window !== 'undefined' && '__TAURI__' in window);
+  }, []);
 
   // 新規サーバー追加ダイアログ関連
   const [addServerDialog, setAddServerDialog] = useState(false);
@@ -388,7 +395,14 @@ function ServerList() {
       setConnectionState((d && (d.status || d)) ?? null);
     };
     // stable callbacks for connection state so we can remove only our handlers on cleanup
-    const onConnectedCallback = () => handleConnectionUpdate({ status: "connected" });
+    const onConnectedCallback = () => {
+      handleConnectionUpdate({ status: "connected" });
+      // Update latency when connected
+      const currentLatency = bedrockProxyAPI.getLatency();
+      if (currentLatency > 0) {
+        setLatency(currentLatency);
+      }
+    };
     const onDisconnectedCallback = () => handleConnectionUpdate({ status: "disconnected" });
 
     // live console log (for overview)
@@ -477,6 +491,11 @@ function ServerList() {
         const list = await bedrockProxyAPI.getServers();
         setServers(list);
         setIsConnected(true);
+        // Update latency when connected
+        const currentLatency = bedrockProxyAPI.getLatency();
+        if (currentLatency > 0) {
+          setLatency(currentLatency);
+        }
       } catch (e) {
         console.warn('getServers after connection established failed', e);
       } finally {
@@ -746,7 +765,7 @@ function ServerList() {
       <Stack
         direction="row"
         spacing={2}
-        sx={{ position: "fixed", top: 12, right: 16, zIndex: 1300 }}
+        sx={{ position: "fixed", top: isTauri ? 48 : 12, right: 16, zIndex: 1300 }}
       >
         {/* Show a red chip when disconnected so users don't mistake it for running */}
         <Chip
@@ -1469,8 +1488,17 @@ function ServerList() {
 }
 
 function App() {
+  // Check if we're running in Tauri
+  const [isTauri, setIsTauri] = useState(false);
+
+  useEffect(() => {
+    // Check if window.__TAURI__ exists
+    setIsTauri(typeof window !== 'undefined' && '__TAURI__' in window);
+  }, []);
+
   return (
     <LanguageProvider>
+      {isTauri && <TitleBar />}
       <Routes>
         <Route path="/" element={<ServerList />} />
         <Route path="/server/:id" element={<ServerDetails />} />
