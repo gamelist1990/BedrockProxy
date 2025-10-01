@@ -129,6 +129,9 @@ export class Logger {
   public info(category: string, message: string, data?: any, clientId?: string, requestId?: string): void {
     if (!this.shouldLog(LogLevel.INFO)) return;
 
+    // Skip broadcasting udp-proxy and ServerManager logs to console.output
+    const skipBroadcast = category === 'udp-proxy' || category === 'ServerManager';
+
     const entry: LogEntry = {
       timestamp: new Date(),
       level: LogLevel.INFO,
@@ -139,12 +142,17 @@ export class Logger {
       requestId
     };
 
-    this.addLog(entry);
+    if (!skipBroadcast) {
+      this.addLog(entry);
+    }
     console.log(this.formatMessage(category, message, data, clientId, requestId));
   }
 
   public debug(category: string, message: string, data?: any, clientId?: string, requestId?: string): void {
     if (!this.shouldLog(LogLevel.DEBUG)) return;
+
+    // Skip broadcasting udp-proxy and ServerManager logs to console.output
+    const skipBroadcast = category === 'udp-proxy' || category === 'ServerManager';
 
     const entry: LogEntry = {
       timestamp: new Date(),
@@ -156,7 +164,9 @@ export class Logger {
       requestId
     };
 
-    this.addLog(entry);
+    if (!skipBroadcast) {
+      this.addLog(entry);
+    }
     console.debug(this.formatMessage(category, message, data, clientId, requestId));
   }
 

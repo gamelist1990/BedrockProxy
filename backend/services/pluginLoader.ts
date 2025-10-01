@@ -367,22 +367,80 @@ export class PluginLoader {
 
     console.log(`🔄 Reloading plugin: ${plugin.metadata.name}`);
 
+    const wasEnabled = plugin.enabled;
+
     // If plugin is currently enabled, disable it first
-    if (plugin.enabled) {
+    if (wasEnabled) {
       await this.disablePlugin(pluginId);
     }
 
-    // Re-enable the plugin (this will reload the code)
+    // Clear require cache for this plugin to force fresh code load
     try {
-      const reloadedPlugin = await this.enablePlugin(pluginId);
-      console.log(`✅ Plugin ${plugin.metadata.name} reloaded successfully`);
-      return reloadedPlugin;
+      // Delete from Node's require cache
+      if (require.cache[plugin.filePath]) {
+        delete require.cache[plugin.filePath];
+      }
+      
+      // If plugin has its own node_modules, clear those too
+      if (plugin.pluginPath && plugin.hasNodeModules) {
+        const nodeModulesPath = join(plugin.pluginPath, 'node_modules');
+        Object.keys(require.cache).forEach(key => {
+          if (key.startsWith(nodeModulesPath)) {
+            delete require.cache[key];
+          }
+        });
+      }
+    } catch (e) {
+      console.warn(`⚠️ Could not clear require cache for ${pluginId}:`, e);
+    }
+
+    // Re-load plugin metadata and code from disk
+    try {
+      let updatedPlugin: Plugin | null = null;
+      
+      // Try loading as folder first
+      const folderPath = join(this.pluginDirectory, pluginId);
+      if (existsSync(folderPath)) {
+        const stats = statSync(folderPath);
+        if (stats.isDirectory()) {
+          updatedPlugin = await this.loadPluginFromFolder(pluginId);
+        }
+      }
+      
+      // Try loading as .js file if folder load failed
+      if (!updatedPlugin) {
+        const filePath = join(this.pluginDirectory, pluginId + '.js');
+        if (existsSync(filePath)) {
+          updatedPlugin = await this.loadPluginFile(pluginId + '.js');
+        }
+      }
+      
+      if (updatedPlugin) {
+        this.plugins.set(pluginId, updatedPlugin);
+      }
+    } catch (e) {
+      console.warn(`⚠️ Could not reload plugin metadata for ${pluginId}:`, e);
+    }
+
+    // Re-enable the plugin if it was enabled before
+    try {
+      if (wasEnabled) {
+        const reloadedPlugin = await this.enablePlugin(pluginId);
+        console.log(`✅ Plugin ${plugin.metadata.name} reloaded successfully`);
+        return reloadedPlugin;
+      } else {
+        console.log(`✅ Plugin ${plugin.metadata.name} reloaded (but kept disabled)`);
+        return this.plugins.get(pluginId)!;
+      }
     } catch (error) {
       console.error(`❌ Failed to reload plugin ${pluginId}:`, error);
       // Update plugin state to reflect reload failure
-      plugin.loaded = false;
-      plugin.error = String(error);
-      this.plugins.set(pluginId, plugin);
+      const failedPlugin = this.plugins.get(pluginId);
+      if (failedPlugin) {
+        failedPlugin.loaded = false;
+        failedPlugin.error = String(error);
+        this.plugins.set(pluginId, failedPlugin);
+      }
       throw error;
     }
   }
