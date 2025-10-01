@@ -88,6 +88,9 @@ export const ja_JP = {
   "lang.ja": "日本語",
   "lang.en": "English",
   "lang.auto": "自動検出",
+  "lang.openFolder": "言語フォルダを開く",
+  "lang.folderOpened": "言語フォルダを開きました",
+  "lang.folderOpenFailed": "言語フォルダを開けませんでした",
   
   // 共通
   "common.save": "保存",

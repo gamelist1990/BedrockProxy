@@ -14,36 +14,46 @@ interface LanguageInfo {
 // 動的にカスタム言語ファイルを読み込む関数
 const loadCustomLanguage = async (langCode: string): Promise<TranslationDict | null> => {
   try {
-    // まず public/lang/ から読み込みを試行（既存の動作を維持）
+    // まず実行場所の langs/ フォルダから読み込みを試行（Tauri環境）
+    try {
+      const { homeDir, join } = await import('@tauri-apps/api/path');
+      const { readTextFile, exists } = await import('@tauri-apps/plugin-fs');
+
+      const homePath = await homeDir();
+      const basePath = await join(homePath, 'Documents', 'PEXData', 'BedrockProxy');
+      const langsPath = await join(basePath, 'langs');
+      const langFilePath = await join(langsPath, `${langCode}.json`);
+
+      console.log(`[Language] Checking Tauri path: ${langFilePath}`);
+
+      const langsExists = await exists(langsPath);
+      console.log(`[Language] Langs folder exists: ${langsExists}`);
+      
+      if (langsExists) {
+        const fileExists = await exists(langFilePath);
+        console.log(`[Language] File ${langCode}.json exists: ${fileExists}`);
+        
+        if (fileExists) {
+          const content = await readTextFile(langFilePath);
+          console.log(`[Language] Successfully loaded ${langCode} from Tauri path`);
+          return JSON.parse(content);
+        }
+      }
+    } catch (tauriError) {
+      // Tauri APIが利用できない場合は次の方法を試す
+      console.log('[Language] Not in Tauri environment, trying public folder');
+    }
+
+    // Tauri環境でファイルがない場合、または Web環境の場合は public/lang/ から読み込み
     const response = await fetch(`/lang/${langCode}.json`);
     if (response.ok) {
+      console.log(`[Language] Successfully loaded ${langCode} from public folder`);
       return await response.json();
     }
 
-    // public/lang/ にない場合は、実行場所の langs/ フォルダから読み込みを試行
-    try {
-      const { appDataDir, join } = await import('@tauri-apps/api/path');
-      const { readTextFile, exists } = await import('@tauri-apps/plugin-fs');
-
-      const appPath = await appDataDir();
-      const langsPath = await join(appPath, 'langs');
-      const langFilePath = await join(langsPath, `${langCode}.json`);
-
-      const langsExists = await exists(langsPath);
-      if (!langsExists) return null;
-
-      const fileExists = await exists(langFilePath);
-      if (!fileExists) return null;
-
-      const content = await readTextFile(langFilePath);
-      return JSON.parse(content);
-    } catch (tauriError) {
-      // Tauri APIが利用できない場合（Web環境など）は無視
-      console.warn('Tauri API not available for custom language loading:', tauriError);
-      return null;
-    }
+    return null;
   } catch (error) {
-    console.warn(`Failed to load custom language: ${langCode}`, error);
+    console.debug(`[Language] Language file not found: ${langCode}`);
     return null;
   }
 };
@@ -54,38 +64,12 @@ const detectAvailableLanguages = async (): Promise<LanguageInfo[]> => {
     { code: 'ja_JP', name: '日本語', isCustom: false }
   ];
 
-  // よく使われる言語コードをチェック
-  const commonLanguages = [
+  // public/lang/ から利用可能な言語をチェック（Web環境用）
+  const publicLanguages = [
     { code: 'en_US', name: 'English' },
-    { code: 'zh_CN', name: '中文简体' },
-    { code: 'zh_TW', name: '中文繁體' },
-    { code: 'ko_KR', name: '한국어' },
-    { code: 'fr_FR', name: 'Français' },
-    { code: 'de_DE', name: 'Deutsch' },
-    { code: 'es_ES', name: 'Español' },
-    { code: 'pt_BR', name: 'Português' },
-    { code: 'ru_RU', name: 'Русский' },
-    { code: 'it_IT', name: 'Italiano' },
-    { code: 'nl_NL', name: 'Nederlands' },
-    { code: 'sv_SE', name: 'Svenska' },
-    { code: 'da_DK', name: 'Dansk' },
-    { code: 'no_NO', name: 'Norsk' },
-    { code: 'fi_FI', name: 'Suomi' },
-    { code: 'pl_PL', name: 'Polski' },
-    { code: 'cs_CZ', name: 'Čeština' },
-    { code: 'hu_HU', name: 'Magyar' },
-    { code: 'tr_TR', name: 'Türkçe' },
-    { code: 'ar_SA', name: 'العربية' },
-    { code: 'he_IL', name: 'עברית' },
-    { code: 'th_TH', name: 'ไทย' },
-    { code: 'vi_VN', name: 'Tiếng Việt' },
-    { code: 'id_ID', name: 'Bahasa Indonesia' },
-    { code: 'ms_MY', name: 'Bahasa Melayu' },
-    { code: 'hi_IN', name: 'हिन्दी' },
   ];
 
-  // 各言語ファイルの存在を確認（public/lang/ と langs/ の両方をチェック）
-  for (const lang of commonLanguages) {
+  for (const lang of publicLanguages) {
     const customLang = await loadCustomLanguage(lang.code);
     if (customLang) {
       languages.push({
@@ -96,39 +80,61 @@ const detectAvailableLanguages = async (): Promise<LanguageInfo[]> => {
     }
   }
 
-  // 実行場所の langs/ フォルダをスキャンして追加の言語ファイルを検知
+  // Tauri環境: langs/ フォルダをスキャンして言語ファイルを検知
   try {
     const { readDir, exists } = await import('@tauri-apps/plugin-fs');
-    const { appDataDir, join } = await import('@tauri-apps/api/path');
+    const { homeDir, join } = await import('@tauri-apps/api/path');
 
-    const appDataPath = await appDataDir();
-    const langsPath = await join(appDataPath, 'langs');
+    const homePath = await homeDir();
+    const basePath = await join(homePath, 'Documents', 'PEXData', 'BedrockProxy');
+    const langsPath = await join(basePath, 'langs');
+
+    console.log('[Language] Checking langs folder path:', langsPath);
 
     const langsExists = await exists(langsPath);
+    console.log('[Language] Langs folder exists:', langsExists);
+    
     if (langsExists) {
+      console.log('[Language] Scanning langs folder for JSON files...');
       const entries = await readDir(langsPath);
+      console.log('[Language] Found entries:', entries.length);
+      
       for (const entry of entries) {
+        console.log('[Language] Entry:', entry.name, 'isFile:', entry.isFile);
+        
         if (entry.name?.endsWith('.json')) {
           const langCode = entry.name.replace('.json', '');
+          console.log('[Language] Processing JSON file:', langCode);
+          
           // すでに検知済みの言語はスキップ
           if (!languages.find(lang => lang.code === langCode)) {
+            console.log('[Language] Loading custom language:', langCode);
             const customLang = await loadCustomLanguage(langCode);
             if (customLang) {
-              // 言語名を取得（ファイル名から推測するか、デフォルト名を使用）
+              // 言語名を取得（ファイル内のlang.nameキーから、なければコード名）
               const langName = customLang['lang.name'] || customLang['language.name'] || langCode;
               languages.push({
                 code: langCode,
                 name: langName,
                 isCustom: true
               });
+              console.log(`[Language] ✅ Detected custom language: ${langCode} (${langName})`);
+            } else {
+              console.log(`[Language] ❌ Failed to load: ${langCode}`);
             }
+          } else {
+            console.log('[Language] Skipping already detected:', langCode);
           }
         }
       }
+      console.log('[Language] Total languages detected:', languages.length);
+    } else {
+      console.log('[Language] Langs folder does not exist, skipping scan');
     }
   } catch (error) {
     // Tauri APIが利用できない場合やエラーが発生した場合は無視
-    console.warn('Failed to scan langs folder:', error);
+    console.log('[Language] Error scanning langs folder:', error);
+    console.log('[Language] Not in Tauri environment or langs folder not accessible');
   }
 
   return languages;

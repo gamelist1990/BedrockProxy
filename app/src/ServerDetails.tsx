@@ -2127,7 +2127,7 @@ function ServerDetails() {
                       <Typography variant="subtitle2" color="text.secondary">
                         {t("plugins.status") || "状態"}
                       </Typography>
-                      <Typography variant="body1">
+                      <Box>
                         {selectedPlugin.loaded ? (
                           <Chip
                             label={t("plugins.loaded") || "読み込み済み"}
@@ -2141,7 +2141,7 @@ function ServerDetails() {
                             size="small"
                           />
                         )}
-                      </Typography>
+                      </Box>
                     </Box>
                   </Stack>
                   <Box>
