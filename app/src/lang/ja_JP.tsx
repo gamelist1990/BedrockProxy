@@ -252,6 +252,9 @@ export const ja_JP = {
   "plugins.additionalInfo": "追加情報",
   "plugins.homepage": "ホームページ",
   "plugins.minVersion": "最小バージョン",
+  "plugins.reload": "更新",
+  "plugins.reloaded": "プラグインをリロードしました",
+  "plugins.reloadFailed": "プラグインのリロードに失敗しました",
 };
 
 export default ja_JP;

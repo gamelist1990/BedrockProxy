@@ -357,6 +357,37 @@ export class PluginLoader {
   }
 
   /**
+   * Reload a plugin (disable and re-enable)
+   */
+  async reloadPlugin(pluginId: string): Promise<Plugin> {
+    const plugin = this.plugins.get(pluginId);
+    if (!plugin) {
+      throw new Error(`Plugin ${pluginId} not found`);
+    }
+
+    console.log(`🔄 Reloading plugin: ${plugin.metadata.name}`);
+
+    // If plugin is currently enabled, disable it first
+    if (plugin.enabled) {
+      await this.disablePlugin(pluginId);
+    }
+
+    // Re-enable the plugin (this will reload the code)
+    try {
+      const reloadedPlugin = await this.enablePlugin(pluginId);
+      console.log(`✅ Plugin ${plugin.metadata.name} reloaded successfully`);
+      return reloadedPlugin;
+    } catch (error) {
+      console.error(`❌ Failed to reload plugin ${pluginId}:`, error);
+      // Update plugin state to reflect reload failure
+      plugin.loaded = false;
+      plugin.error = String(error);
+      this.plugins.set(pluginId, plugin);
+      throw error;
+    }
+  }
+
+  /**
    * Get all plugins
    */
   getPlugins(): Plugin[] {

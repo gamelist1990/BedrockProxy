@@ -570,6 +570,14 @@ export class BedrockProxyAPI {
     console.log(`[API] Plugin disabled:`, response.plugin);
     return response.plugin;
   }
+
+  // プラグインリロード
+  public async reloadPlugin(serverId: string, pluginId: string): Promise<any> {
+    console.log(`[API] Reloading plugin ${pluginId} for server ${serverId}`);
+    const response = await this.sendRequest<{ plugin: any }>('plugins.reload', { serverId, pluginId });
+    console.log(`[API] Plugin reloaded:`, response.plugin);
+    return response.plugin;
+  }
 }
 
 // シングルトンインスタンス

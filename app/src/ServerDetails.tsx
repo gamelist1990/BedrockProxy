@@ -2341,6 +2341,41 @@ function ServerDetails() {
           )}
         </DialogContent>
         <DialogActions>
+          <Button
+            onClick={async () => {
+              if (!selectedPlugin || !server?.id) return;
+
+              try {
+                setLoadingPlugins(true);
+                await bedrockProxyAPI.reloadPlugin(server.id, selectedPlugin.id);
+                // Reload plugin list to reflect changes
+                await loadPluginsData(false);
+                setSnackbarMessage(
+                  t("plugins.reloaded") || "プラグインをリロードしました"
+                );
+                setSnackbarSeverity("success");
+                setSnackbarOpen(true);
+              } catch (error) {
+                console.error("Failed to reload plugin:", error);
+                setSnackbarMessage(
+                  t("plugins.reloadFailed") || "プラグインのリロードに失敗しました"
+                );
+                setSnackbarSeverity("error");
+                setSnackbarOpen(true);
+              } finally {
+                setLoadingPlugins(false);
+              }
+            }}
+            disabled={loadingPlugins}
+            color="primary"
+            variant="contained"
+          >
+            {loadingPlugins ? (
+              <CircularProgress size={20} />
+            ) : (
+              t("plugins.reload") || "更新"
+            )}
+          </Button>
           <Button onClick={() => setPluginDetailsOpen(false)}>
             {t("common.close") || "閉じる"}
           </Button>

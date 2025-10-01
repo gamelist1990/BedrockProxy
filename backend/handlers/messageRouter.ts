@@ -94,6 +94,10 @@ export class MessageRouter {
           data = await this.handleDisablePlugin(message.data);
           break;
 
+        case "plugins.reload":
+          data = await this.handleReloadPlugin(message.data);
+          break;
+
         // イベント購読関連
         case "subscribe":
           return this.handleSubscribe(message.data, client);
@@ -480,6 +484,29 @@ export class MessageRouter {
       return { plugin };
     } catch (error) {
       console.error(`❌ [API] Failed to disable plugin:`, error);
+      throw error;
+    }
+  }
+
+  // プラグインリロード
+  private async handleReloadPlugin(data: { serverId: string; pluginId: string }): Promise<{ plugin: any }> {
+    console.log(`🔄 [API] Reloading plugin ${data.pluginId} for server ${data.serverId}`);
+    
+    if (!data || !data.serverId || !data.pluginId) {
+      throw new APIError("Server ID and Plugin ID are required", "MISSING_DATA", 400);
+    }
+
+    const server = this.serverManager.getServer(data.serverId);
+    if (!server) {
+      throw new APIError(`Server with id ${data.serverId} not found`, "SERVER_NOT_FOUND", 404);
+    }
+
+    try {
+      const plugin = await this.serverManager.reloadPlugin(data.serverId, data.pluginId);
+      console.log(`✅ [API] Reloaded plugin ${data.pluginId}`);
+      return { plugin };
+    } catch (error) {
+      console.error(`❌ [API] Failed to reload plugin:`, error);
       throw error;
     }
   }

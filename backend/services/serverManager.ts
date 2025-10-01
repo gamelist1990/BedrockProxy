@@ -1395,6 +1395,26 @@ export class ServerManager {
   }
   
   /**
+   * Reload a plugin
+   */
+  public async reloadPlugin(serverId: string, pluginId: string) {
+    console.log(`🔄 [Plugin] Reloading plugin ${pluginId} for server ${serverId}`);
+    const loader = this.getPluginLoader(serverId);
+    
+    try {
+      const plugin = await loader.reloadPlugin(pluginId);
+      console.log(`✅ [Plugin] Reloaded plugin ${pluginId}:`, {
+        name: plugin.metadata.name,
+        version: plugin.metadata.version
+      });
+      return plugin;
+    } catch (error) {
+      console.error(`❌ [Plugin] Failed to reload plugin ${pluginId}:`, error);
+      throw error;
+    }
+  }
+  
+  /**
    * Trigger event in all plugins
    */
   public triggerPluginEvent(serverId: string, eventName: string, data: any) {
