@@ -154,6 +154,8 @@ export const ja_JP = {
   "settings.ipv4Fixed": "IPv4は固定です",
   "settings.description": "説明メモ",
   "settings.auto": "自動設定",
+  "settings.autoStart": "アプリ起動時に自動開始",
+  "settings.autoStartDesc": "アプリケーション起動時にこのサーバーを自動的に開始します",
   "settings.autoRestart": "自動再起動",
   "settings.backupForward": "予備転送設定",
   "settings.backupDestination": "予備転送先",
