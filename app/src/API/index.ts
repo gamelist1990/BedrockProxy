@@ -5,6 +5,7 @@ import { Command } from '@tauri-apps/plugin-shell';
 import type { ConnectionEventType } from './connectionManager.js';
 
 export type ServerStatus = "online" | "offline" | "starting" | "stopping" | "error";
+export type ServerMode = "normal" | "proxyOnly"; // Server operation mode
 
 export interface Player {
   id: string;
@@ -14,12 +15,22 @@ export interface Player {
   port?: number;
 }
 
+export interface UDPConnection {
+  id: string;
+  ipAddress: string;
+  port: number;
+  connectTime: Date;
+  disconnectTime?: Date;
+  isActive: boolean;
+}
+
 export interface Server {
   id: string;
   name: string;
   address: string;
   destinationAddress: string;
   status: ServerStatus;
+  mode?: ServerMode; // Operation mode
   playersOnline: number;
   maxPlayers: number;
   iconUrl?: string;
@@ -28,9 +39,12 @@ export interface Server {
   autoRestart?: boolean;
   blockSameIP?: boolean;
   forwardAddress?: string;
+  pluginsEnabled?: boolean;
+  plugins?: Record<string, any>; // プラグイン設定（プラグインID -> 設定オブジェクト）
   description?: string;
   docs?: string;
   players?: Player[];
+  udpConnections?: UDPConnection[]; // For Proxy Only mode
   executablePath?: string;
   serverDirectory?: string;
   createdAt: Date;
@@ -48,6 +62,36 @@ export interface WebSocketMessage<T = any> {
 }
 
 export type EventCallback<T = any> = (data: T) => void;
+
+// デフォルトサーバーフィールド（新しいキーはここに追加）
+const DEFAULT_SERVER_FIELDS: Partial<Server> = {
+  status: "offline",
+  playersOnline: 0,
+  maxPlayers: 20,
+  tags: [],
+  autoStart: false,
+  autoRestart: false,
+  blockSameIP: false,
+  pluginsEnabled: false,
+  plugins: {},
+  players: [],
+  udpConnections: [],
+  mode: "normal"
+};
+
+// サーバーデータの正規化（欠損キーを補完）
+function normalizeServer(server: any): Server {
+  return {
+    ...DEFAULT_SERVER_FIELDS,
+    ...server,
+    createdAt: server.createdAt ? new Date(server.createdAt) : new Date(),
+    updatedAt: server.updatedAt ? new Date(server.updatedAt) : new Date(),
+    players: server.players?.map((player: any) => ({
+      ...player,
+      joinTime: new Date(player.joinTime),
+    })) || [],
+  };
+}
 
 export class BedrockProxyAPI {
   private connectionManager = wsClient;
@@ -209,26 +253,14 @@ export class BedrockProxyAPI {
   // サーバー一覧取得
   public async getServers(): Promise<Server[]> {
     const response = await this.sendRequest<{ servers: Server[] }>('servers.getAll');
-    return response.servers.map(server => ({
-      ...server,
-      createdAt: new Date(server.createdAt),
-      updatedAt: new Date(server.updatedAt),
-      players: server.players?.map(player => ({
-        ...player,
-        joinTime: new Date(player.joinTime),
-      })),
-    }));
+    return response.servers.map(server => normalizeServer(server));
   }
 
   // サーバー詳細取得
   public async getServerDetails(id: string): Promise<{ server: Server; players: Player[] }> {
     const response = await this.sendRequest<{ server: Server; players: Player[] }>('servers.getDetails', { id });
     return {
-      server: {
-        ...response.server,
-        createdAt: new Date(response.server.createdAt),
-        updatedAt: new Date(response.server.updatedAt),
-      },
+      server: normalizeServer(response.server),
       players: response.players.map(player => ({
         ...player,
         joinTime: new Date(player.joinTime),
@@ -253,21 +285,13 @@ export class BedrockProxyAPI {
     serverDirectory?: string;
   }): Promise<Server> {
     const response = await this.sendRequest<{ server: Server }>('servers.add', serverData);
-    return {
-      ...response.server,
-      createdAt: new Date(response.server.createdAt),
-      updatedAt: new Date(response.server.updatedAt),
-    };
+    return normalizeServer(response.server);
   }
 
   // サーバー更新
   public async updateServer(id: string, updates: Partial<Omit<Server, 'id' | 'createdAt' | 'updatedAt' | 'players' | 'playersOnline'>>): Promise<Server> {
     const response = await this.sendRequest<{ server: Server }>('servers.update', { id, updates });
-    return {
-      ...response.server,
-      createdAt: new Date(response.server.createdAt),
-      updatedAt: new Date(response.server.updatedAt),
-    };
+    return normalizeServer(response.server);
   }
 
   // サーバー削除
@@ -278,11 +302,7 @@ export class BedrockProxyAPI {
   // サーバー操作（開始/停止/再起動/ブロック）
   public async performServerAction(id: string, action: 'start' | 'stop' | 'restart', targetIP?: string): Promise<Server> {
     const response = await this.sendRequest<{ server: Server }>('servers.action', { id, action, targetIP });
-    return {
-      ...response.server,
-      createdAt: new Date(response.server.createdAt),
-      updatedAt: new Date(response.server.updatedAt),
-    };
+    return normalizeServer(response.server);
   }
 
   // イベント購読
@@ -376,11 +396,7 @@ export class BedrockProxyAPI {
       detectedInfo,
       customConfig
     });
-    return {
-      ...response.server,
-      createdAt: new Date(response.server.createdAt),
-      updatedAt: new Date(response.server.updatedAt),
-    };
+    return normalizeServer(response.server);
   }
 
   // サーバーコンソール取得
@@ -497,6 +513,46 @@ export class BedrockProxyAPI {
   }
 
   // sidecar-based auto-start handled inline in reconnect event
+
+  // システム情報を取得
+  public async getSystemInfo(): Promise<{ pluginsDirectory: string; dataDirectory: string }> {
+    const response = await this.sendRequest<{ pluginsDirectory: string; dataDirectory: string }>('system.getInfo', {});
+    return response;
+  }
+  
+  // ==================== Plugin API ====================
+  
+  // プラグイン読み込み
+  public async loadPlugins(serverId: string): Promise<any[]> {
+    console.log(`[API] Loading plugins for server ${serverId}`);
+    const response = await this.sendRequest<{ plugins: any[] }>('plugins.load', { serverId });
+    console.log(`[API] Loaded plugins:`, response.plugins);
+    return response.plugins;
+  }
+  
+  // プラグイン一覧取得
+  public async getPlugins(serverId: string): Promise<any[]> {
+    console.log(`[API] Getting plugins for server ${serverId}`);
+    const response = await this.sendRequest<{ plugins: any[] }>('plugins.getAll', { serverId });
+    console.log(`[API] Got plugins:`, response.plugins);
+    return response.plugins;
+  }
+  
+  // プラグイン有効化
+  public async enablePlugin(serverId: string, pluginId: string): Promise<any> {
+    console.log(`[API] Enabling plugin ${pluginId} for server ${serverId}`);
+    const response = await this.sendRequest<{ plugin: any }>('plugins.enable', { serverId, pluginId });
+    console.log(`[API] Plugin enabled:`, response.plugin);
+    return response.plugin;
+  }
+  
+  // プラグイン無効化
+  public async disablePlugin(serverId: string, pluginId: string): Promise<any> {
+    console.log(`[API] Disabling plugin ${pluginId} for server ${serverId}`);
+    const response = await this.sendRequest<{ plugin: any }>('plugins.disable', { serverId, pluginId });
+    console.log(`[API] Plugin disabled:`, response.plugin);
+    return response.plugin;
+  }
 }
 
 // シングルトンインスタンス

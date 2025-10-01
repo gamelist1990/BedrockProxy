@@ -72,6 +72,28 @@ export class MessageRouter {
           data = await this.handleSaveConfig(message.data);
           break;
 
+        // システム情報
+        case "system.getInfo":
+          data = this.handleGetSystemInfo(message.data);
+          break;
+        
+        // プラグイン関連
+        case "plugins.load":
+          data = await this.handleLoadPlugins(message.data);
+          break;
+        
+        case "plugins.getAll":
+          data = this.handleGetPlugins(message.data);
+          break;
+        
+        case "plugins.enable":
+          data = await this.handleEnablePlugin(message.data);
+          break;
+        
+        case "plugins.disable":
+          data = await this.handleDisablePlugin(message.data);
+          break;
+
         // イベント購読関連
         case "subscribe":
           return this.handleSubscribe(message.data, client);
@@ -363,6 +385,103 @@ export class MessageRouter {
 
     await this.serverManager.saveAppConfig(data.config);
     return { success: true };
+  }
+
+  // システム情報取得
+  private handleGetSystemInfo(data: ServerAPI.GetSystemInfoRequest): ServerAPI.GetSystemInfoResponse {
+    return {
+      pluginsDirectory: this.serverManager.getPluginsDirectory(),
+      dataDirectory: this.serverManager.getDataDirectory()
+    };
+  }
+  
+  // ==================== Plugin Handlers ====================
+  
+  // プラグイン読み込み
+  private async handleLoadPlugins(data: { serverId: string }): Promise<{ plugins: any[] }> {
+    console.log(`🔌 [API] Loading plugins for server ${data.serverId}`);
+    
+    if (!data || !data.serverId) {
+      throw new APIError("Server ID is required", "MISSING_SERVER_ID", 400);
+    }
+
+    const server = this.serverManager.getServer(data.serverId);
+    if (!server) {
+      throw new APIError(`Server with id ${data.serverId} not found`, "SERVER_NOT_FOUND", 404);
+    }
+
+    try {
+      const plugins = await this.serverManager.loadPlugins(data.serverId);
+      console.log(`✅ [API] Loaded ${plugins.length} plugins for server ${data.serverId}`);
+      return { plugins };
+    } catch (error) {
+      console.error(`❌ [API] Failed to load plugins:`, error);
+      throw error;
+    }
+  }
+  
+  // プラグイン一覧取得
+  private handleGetPlugins(data: { serverId: string }): { plugins: any[] } {
+    console.log(`📋 [API] Getting plugins for server ${data.serverId}`);
+    
+    if (!data || !data.serverId) {
+      throw new APIError("Server ID is required", "MISSING_SERVER_ID", 400);
+    }
+
+    const server = this.serverManager.getServer(data.serverId);
+    if (!server) {
+      throw new APIError(`Server with id ${data.serverId} not found`, "SERVER_NOT_FOUND", 404);
+    }
+
+    const plugins = this.serverManager.getPlugins(data.serverId);
+    console.log(`✅ [API] Got ${plugins.length} plugins for server ${data.serverId}`);
+    return { plugins };
+  }
+  
+  // プラグイン有効化
+  private async handleEnablePlugin(data: { serverId: string; pluginId: string }): Promise<{ plugin: any }> {
+    console.log(`🔌 [API] Enabling plugin ${data.pluginId} for server ${data.serverId}`);
+    
+    if (!data || !data.serverId || !data.pluginId) {
+      throw new APIError("Server ID and Plugin ID are required", "MISSING_DATA", 400);
+    }
+
+    const server = this.serverManager.getServer(data.serverId);
+    if (!server) {
+      throw new APIError(`Server with id ${data.serverId} not found`, "SERVER_NOT_FOUND", 404);
+    }
+
+    try {
+      const plugin = await this.serverManager.enablePlugin(data.serverId, data.pluginId);
+      console.log(`✅ [API] Enabled plugin ${data.pluginId}`);
+      return { plugin };
+    } catch (error) {
+      console.error(`❌ [API] Failed to enable plugin:`, error);
+      throw error;
+    }
+  }
+  
+  // プラグイン無効化
+  private async handleDisablePlugin(data: { serverId: string; pluginId: string }): Promise<{ plugin: any }> {
+    console.log(`🔌 [API] Disabling plugin ${data.pluginId} for server ${data.serverId}`);
+    
+    if (!data || !data.serverId || !data.pluginId) {
+      throw new APIError("Server ID and Plugin ID are required", "MISSING_DATA", 400);
+    }
+
+    const server = this.serverManager.getServer(data.serverId);
+    if (!server) {
+      throw new APIError(`Server with id ${data.serverId} not found`, "SERVER_NOT_FOUND", 404);
+    }
+
+    try {
+      const plugin = await this.serverManager.disablePlugin(data.serverId, data.pluginId);
+      console.log(`✅ [API] Disabled plugin ${data.pluginId}`);
+      return { plugin };
+    } catch (error) {
+      console.error(`❌ [API] Failed to disable plugin:`, error);
+      throw error;
+    }
   }
 
   // サーバーコンソール取得

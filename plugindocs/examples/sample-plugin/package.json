@@ -1,0 +1,27 @@
+{
+  "name": "@bedrockproxy/sample-plugin",
+  "version": "1.0.0",
+  "description": "A sample plugin demonstrating the BedrockProxy Plugin API",
+  "main": "index.js",
+  "author": "BedrockProxy Team",
+  "license": "MIT",
+  "homepage": "https://github.com/gamelist1990/BedrockProxy",
+  "keywords": [
+    "bedrockproxy",
+    "plugin",
+    "minecraft",
+    "bedrock"
+  ],
+  "bedrockproxy": {
+    "minVersion": "1.0.0",
+    "permissions": [
+      "server:command",
+      "player:manage",
+      "storage:write",
+      "http:request",
+      "fs:write"
+    ]
+  },
+  "dependencies": {},
+  "devDependencies": {}
+}

@@ -31,6 +31,8 @@ import {
 import RestartAltRoundedIcon from "@mui/icons-material/RestartAltRounded";
 import DeleteOutlineRoundedIcon from "@mui/icons-material/DeleteOutlineRounded";
 import LanguageIcon from "@mui/icons-material/Language";
+import BugReportIcon from "@mui/icons-material/BugReport";
+import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import {
   LanguageProvider,
   useLanguageContext,
@@ -44,7 +46,6 @@ import { resourceDir } from '@tauri-apps/api/path';
 import { Command } from '@tauri-apps/plugin-shell';
 import { listen } from '@tauri-apps/api/event';
 import ServerDetails from "./ServerDetails";
-import TitleBar from "./TitleBar";
 import "./css/App.css";
 import ServerAvatar from './components/ServerAvatar';
 
@@ -85,6 +86,7 @@ function ServerList() {
   const [connectionState, setConnectionState] = useState<string | null>(null);
   const [latency, setLatency] = useState<number | null>(null);
   const [liveLogs, setLiveLogs] = useState<string[]>([]);
+  const [liveLogsExpanded, setLiveLogsExpanded] = useState(false);
   const [isTauri, setIsTauri] = useState(false);
 
   // Check if running in Tauri
@@ -1091,32 +1093,116 @@ function ServerList() {
           </Alert>
         </Snackbar>
 
-        {/* live logs small drawer */}
+        {/* live logs collapsible drawer */}
         <Box
           sx={{
             position: "fixed",
-            bottom: 12,
+            bottom: 16,
             right: 16,
-            width: 320,
             zIndex: 1300,
           }}
         >
           {liveLogs.length > 0 && (
-            <Card elevation={6} sx={{ maxHeight: 220, overflow: "auto" }}>
-              <CardHeader title={`Live (${liveLogs.length})`} sx={{ p: 1 }} />
-              <Divider />
-              <CardContent sx={{ p: 1 }}>
-                {liveLogs.slice(-8).map((ln, i) => (
-                  <Typography
-                    key={i}
-                    variant="caption"
-                    sx={{ display: "block" }}
+            <>
+              {!liveLogsExpanded ? (
+                // Collapsed state - show icon with badge
+                <Tooltip title={`Live Logs (${liveLogs.length})`} placement="left">
+                  <IconButton
+                    onClick={() => setLiveLogsExpanded(true)}
+                    sx={{
+                      bgcolor: "primary.main",
+                      color: "white",
+                      width: 56,
+                      height: 56,
+                      boxShadow: 3,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      "&:hover": {
+                        bgcolor: "primary.dark",
+                        boxShadow: 6,
+                      },
+                    }}
                   >
-                    {ln}
-                  </Typography>
-                ))}
-              </CardContent>
-            </Card>
+                    <Box sx={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                      <BugReportIcon />
+                      {liveLogs.length > 0 && (
+                        <Box
+                          sx={{
+                            position: "absolute",
+                            top: -12,
+                            right: -12,
+                            bgcolor: "error.main",
+                            color: "white",
+                            borderRadius: "50%",
+                            width: 20,
+                            height: 20,
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            fontSize: "0.7rem",
+                            fontWeight: "bold",
+                          }}
+                        >
+                          {liveLogs.length}
+                        </Box>
+                      )}
+                    </Box>
+                  </IconButton>
+                </Tooltip>
+              ) : (
+                // Expanded state - show full panel
+                <Card elevation={6} sx={{ width: 360, maxHeight: 400, display: "flex", flexDirection: "column" }}>
+                  <CardHeader
+                    title={
+                      <Stack direction="row" alignItems="center" spacing={1}>
+                        <BugReportIcon fontSize="small" />
+                        <Typography variant="subtitle2">Live Logs ({liveLogs.length})</Typography>
+                      </Stack>
+                    }
+                    action={
+                      <IconButton
+                        size="small"
+                        onClick={() => setLiveLogsExpanded(false)}
+                        aria-label="collapse"
+                      >
+                        <ExpandMoreIcon />
+                      </IconButton>
+                    }
+                    sx={{ pb: 1, pt: 1.5 }}
+                  />
+                  <Divider />
+                  <CardContent sx={{ p: 1.5, overflow: "auto", flexGrow: 1 }}>
+                    <Stack spacing={0.5}>
+                      {liveLogs.slice(-12).map((ln, i) => (
+                        <Typography
+                          key={i}
+                          variant="caption"
+                          sx={{
+                            display: "block",
+                            fontFamily: "monospace",
+                            fontSize: "0.7rem",
+                            wordBreak: "break-all",
+                          }}
+                        >
+                          {ln}
+                        </Typography>
+                      ))}
+                    </Stack>
+                  </CardContent>
+                  <Divider />
+                  <CardActions sx={{ justifyContent: "flex-end", p: 1 }}>
+                    <Button
+                      size="small"
+                      onClick={() => setLiveLogs([])}
+                      disabled={liveLogs.length === 0}
+                    >
+                      Clear
+                    </Button>
+                  </CardActions>
+                </Card>
+              )}
+            </>
           )}
         </Box>
 
@@ -1488,17 +1574,8 @@ function ServerList() {
 }
 
 function App() {
-  // Check if we're running in Tauri
-  const [isTauri, setIsTauri] = useState(false);
-
-  useEffect(() => {
-    // Check if window.__TAURI__ exists
-    setIsTauri(typeof window !== 'undefined' && '__TAURI__' in window);
-  }, []);
-
   return (
     <LanguageProvider>
-      {isTauri && <TitleBar />}
       <Routes>
         <Route path="/" element={<ServerList />} />
         <Route path="/server/:id" element={<ServerDetails />} />

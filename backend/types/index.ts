@@ -2,6 +2,8 @@
 
 export type ServerStatus = "online" | "offline" | "starting" | "stopping" | "error";
 
+export type ServerMode = "normal" | "proxyOnly"; // New: Server operation mode
+
 export interface Player {
   id: string;
   name: string;
@@ -11,6 +13,16 @@ export interface Player {
   ipAddress?: string;
   port?: number;
   icon?: string; // base64エンコードされたプレイヤーアイコン
+}
+
+// UDP Connection (for Proxy Only mode)
+export interface UDPConnection {
+  id: string;
+  ipAddress: string;
+  port: number;
+  connectTime: Date;
+  disconnectTime?: Date;
+  isActive: boolean;
 }
 
 // プレイヤーアクションの型
@@ -33,6 +45,7 @@ export interface Server {
   address: string; // 受信用アドレス（例: 127.0.0.1:19132）
   destinationAddress: string; // 転送先アドレス（例: 192.168.1.10:19132）
   status: ServerStatus;
+  mode?: ServerMode; // Operation mode: "normal" or "proxyOnly"
   playersOnline: number;
   maxPlayers: number;
   iconUrl?: string;
@@ -41,9 +54,12 @@ export interface Server {
   autoRestart?: boolean;
   blockSameIP?: boolean;
   forwardAddress?: string; // バックアップ転送サーバー
+  pluginsEnabled?: boolean; // プラグインシステムの有効/無効
+  plugins?: Record<string, any>; // プラグイン設定（プラグインID -> 設定オブジェクト）
   description?: string;
   players?: Player[];
-  executablePath?: string; // サーバー実行ファイルのパス
+  udpConnections?: UDPConnection[]; // For Proxy Only mode
+  executablePath?: string; // サーバー実行ファイルのパス (Not required for proxyOnly)
   serverDirectory?: string; // サーバーディレクトリのパス
   createdAt: Date;
   updatedAt: Date;
@@ -87,6 +103,7 @@ export namespace ServerAPI {
     name: string;
     address: string;
     destinationAddress: string;
+    mode?: ServerMode; // Operation mode: "normal" or "proxyOnly"
     maxPlayers: number;
     iconUrl?: string;
     tags?: string[];
@@ -95,7 +112,8 @@ export namespace ServerAPI {
     autoRestart?: boolean;
     blockSameIP?: boolean;
     forwardAddress?: string;
-    executablePath?: string; // サーバー実行ファイルのパス
+    pluginsEnabled?: boolean;
+    executablePath?: string; // サーバー実行ファイルのパス (Not required for proxyOnly)
     serverDirectory?: string; // サーバーディレクトリのパス
   }
   export interface AddServerResponse {
@@ -190,6 +208,13 @@ export namespace ServerAPI {
   export interface SaveConfigResponse {
     success: true;
   }
+
+  // システム情報
+  export interface GetSystemInfoRequest {}
+  export interface GetSystemInfoResponse {
+    pluginsDirectory: string;
+    dataDirectory: string;
+  }
 }
 
 // イベント通知のタイプ
@@ -246,5 +271,64 @@ export class APIError extends Error {
   ) {
     super(message);
     this.name = 'APIError';
+  }
+}
+
+// プラグイン関連の型
+export interface PluginMetadata {
+  name: string;
+  version: string;
+  description?: string;
+  author?: string;
+  homepage?: string;
+  license?: string;
+  docs?: string;
+  dependencies?: Record<string, string>;
+  keywords?: string[];
+  minBedrockProxyVersion?: string;
+}
+
+export interface Plugin {
+  id: string;
+  metadata: PluginMetadata;
+  enabled: boolean;
+  filePath: string;
+  pluginPath?: string; // Full plugin directory path (for folder-based plugins)
+  loaded: boolean;
+  error?: string;
+  hasNodeModules?: boolean; // Indicates if plugin has its own node_modules folder
+}
+
+export interface PluginContext {
+  serverId: string;
+  metadata: PluginMetadata;
+}
+
+// プラグインAPI
+export namespace PluginAPI {
+  // プラグイン一覧取得
+  export interface GetPluginsRequest {
+    serverId: string;
+  }
+  export interface GetPluginsResponse {
+    plugins: Plugin[];
+  }
+
+  // プラグイン有効化/無効化
+  export interface TogglePluginRequest {
+    serverId: string;
+    pluginId: string;
+    enabled: boolean;
+  }
+  export interface TogglePluginResponse {
+    plugin: Plugin;
+  }
+
+  // プラグイン再読み込み
+  export interface RefreshPluginsRequest {
+    serverId: string;
+  }
+  export interface RefreshPluginsResponse {
+    plugins: Plugin[];
   }
 }

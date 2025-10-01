@@ -15,11 +15,13 @@ import { minecraftServerDetector, type DetectedServerInfo } from "./minecraftSer
 import { processManager } from "./processManager.js";
 import { UDPProxy } from "./udpProxy.js";
 import { logger } from "./logger.js";
+import { PluginLoader } from "./pluginLoader.js";
 
 export class ServerManager {
   private servers = new Map<string, Server>();
   private eventCallbacks = new Map<string, Function[]>();
   private udpProxies = new Map<string, UDPProxy>();
+  private pluginLoaders = new Map<string, PluginLoader>(); // serverId -> PluginLoader
   // serverId -> (clientKey -> { client, lastActivity })
   private recentClientActivity = new Map<string, Map<string, { client: string; lastActivity: Date }>>();
   private initPromise: Promise<void> = Promise.resolve();
@@ -186,6 +188,8 @@ export class ServerManager {
       autoRestart: request.autoRestart || false,
       blockSameIP: request.blockSameIP || false,
       forwardAddress: request.forwardAddress,
+      pluginsEnabled: request.pluginsEnabled || false,
+      plugins: {}, // プラグイン設定を初期化
       description: request.description,
       executablePath: request.executablePath,
       serverDirectory: request.serverDirectory,
@@ -1189,6 +1193,116 @@ export class ServerManager {
 
   public async saveAppConfig(config: any) {
     await dataStorage.saveConfig(config);
+  }
+
+  // システム情報取得
+  public getPluginsDirectory(): string {
+    return dataStorage.getPluginsDirectory();
+  }
+
+  public getDataDirectory(): string {
+    return dataStorage.getDataDirectory();
+  }
+  
+  // ==================== Plugin Management ====================
+  
+  /**
+   * Get or create plugin loader for a server
+   */
+  private getPluginLoader(serverId: string): PluginLoader {
+    if (!this.pluginLoaders.has(serverId)) {
+      const pluginDir = dataStorage.getPluginsDirectory();
+      const storageDir = dataStorage.getDataDirectory();
+      
+      console.log(`🔌 Creating PluginLoader for server ${serverId}`);
+      console.log(`  - Plugin Directory: ${pluginDir}`);
+      console.log(`  - Storage Directory: ${storageDir}`);
+      
+      const loader = new PluginLoader(serverId, pluginDir, this, storageDir);
+      this.pluginLoaders.set(serverId, loader);
+    }
+    return this.pluginLoaders.get(serverId)!;
+  }
+  
+  /**
+   * Load all plugins for a server
+   */
+  public async loadPlugins(serverId: string) {
+    console.log(`🔌 [Plugin] Loading plugins for server ${serverId}`);
+    const loader = this.getPluginLoader(serverId);
+    
+    try {
+      const plugins = await loader.loadPlugins();
+      console.log(`✅ [Plugin] Loaded ${plugins.length} plugins:`, plugins.map(p => ({
+        id: p.id,
+        name: p.metadata.name,
+        version: p.metadata.version,
+        loaded: p.loaded,
+        enabled: p.enabled,
+        error: p.error
+      })));
+      return plugins;
+    } catch (error) {
+      console.error(`❌ [Plugin] Failed to load plugins for server ${serverId}:`, error);
+      throw error;
+    }
+  }
+  
+  /**
+   * Get all plugins for a server
+   */
+  public getPlugins(serverId: string) {
+    const loader = this.getPluginLoader(serverId);
+    const plugins = loader.getPlugins();
+    console.log(`📋 [Plugin] Getting plugins for server ${serverId}: ${plugins.length} found`);
+    return plugins;
+  }
+  
+  /**
+   * Enable a plugin
+   */
+  public async enablePlugin(serverId: string, pluginId: string) {
+    console.log(`🔌 [Plugin] Enabling plugin ${pluginId} for server ${serverId}`);
+    const loader = this.getPluginLoader(serverId);
+    
+    try {
+      const plugin = await loader.enablePlugin(pluginId);
+      console.log(`✅ [Plugin] Enabled plugin ${pluginId}:`, {
+        name: plugin.metadata.name,
+        version: plugin.metadata.version
+      });
+      return plugin;
+    } catch (error) {
+      console.error(`❌ [Plugin] Failed to enable plugin ${pluginId}:`, error);
+      throw error;
+    }
+  }
+  
+  /**
+   * Disable a plugin
+   */
+  public async disablePlugin(serverId: string, pluginId: string) {
+    console.log(`🔌 [Plugin] Disabling plugin ${pluginId} for server ${serverId}`);
+    const loader = this.getPluginLoader(serverId);
+    
+    try {
+      const plugin = await loader.disablePlugin(pluginId);
+      console.log(`✅ [Plugin] Disabled plugin ${pluginId}`);
+      return plugin;
+    } catch (error) {
+      console.error(`❌ [Plugin] Failed to disable plugin ${pluginId}:`, error);
+      throw error;
+    }
+  }
+  
+  /**
+   * Trigger event in all plugins
+   */
+  public triggerPluginEvent(serverId: string, eventName: string, data: any) {
+    const loader = this.pluginLoaders.get(serverId);
+    if (loader) {
+      loader.triggerEvent(eventName, data);
+    }
   }
 
   // データの整合性チェック

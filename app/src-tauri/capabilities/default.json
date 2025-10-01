@@ -8,6 +8,11 @@
     "dialog:allow-open",
     "fs:allow-exists",
     "fs:allow-resource-read",
+    "fs:allow-read-text-file",
+    "fs:allow-read-dir",
+    "fs:allow-mkdir",
+    "fs:allow-write-text-file",
+    "fs:scope-document-recursive",
     {
       "identifier": "shell:allow-execute",
       "allow": [

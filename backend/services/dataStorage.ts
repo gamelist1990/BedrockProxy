@@ -1,7 +1,7 @@
 import { join } from "path";
 import { mkdir, readFile, writeFile, access } from "fs/promises";
 import { homedir } from "os";
-import type { Server } from "../types/index.js";
+import type { Server, ServerStatus } from "../types/index.js";
 
 export interface AppConfig {
   language: string;
@@ -24,6 +24,30 @@ export class DataStorage {
   private serversPath: string;
   private cache: DataStore | null = null;
 
+  // デフォルト設定テンプレート（新しいキーはここに追加）
+  private readonly DEFAULT_CONFIG: AppConfig = {
+    language: "ja-JP",
+    theme: "light",
+    autoStart: false,
+    checkUpdates: true,
+    logLevel: "info"
+  };
+
+  // デフォルトサーバーフィールド（新しいキーはここに追加）
+  private readonly DEFAULT_SERVER_FIELDS = {
+    status: "offline" as ServerStatus,
+    playersOnline: 0,
+    maxPlayers: 20,
+    tags: [],
+    autoStart: false,
+    autoRestart: false,
+    blockSameIP: false,
+    pluginsEnabled: false,
+    plugins: {},
+    players: [],
+    mode: "normal" as const
+  };
+
   constructor() {
     // ドキュメントフォルダの PEXData/BedrockProxy を使用
     this.dataDir = join(homedir(), "Documents", "PEXData", "BedrockProxy");
@@ -31,11 +55,21 @@ export class DataStorage {
     this.serversPath = join(this.dataDir, "servers.json");
   }
 
+  // プラグインディレクトリのパスを取得
+  public getPluginsDirectory(): string {
+    return join(this.dataDir, "plugins");
+  }
+
   // 初期化（ディレクトリ作成）
   public async initialize(): Promise<void> {
     try {
       await mkdir(this.dataDir, { recursive: true });
       console.log(`📁 Data directory initialized: ${this.dataDir}`);
+      
+      // プラグインディレクトリの作成
+      const pluginsDir = this.getPluginsDirectory();
+      await mkdir(pluginsDir, { recursive: true });
+      console.log(`📦 Plugins directory initialized: ${pluginsDir}`);
       
       // 初期データファイルの作成
       await this.ensureDefaultFiles();
@@ -71,23 +105,35 @@ export class DataStorage {
     }
   }
 
-  // 設定の読み込み
+  // 設定の読み込み（自動マイグレーション対応）
   public async loadConfig(): Promise<AppConfig> {
     try {
       const data = await readFile(this.configPath, 'utf-8');
-      const config = JSON.parse(data);
-      console.log("📖 Config loaded successfully");
-      return config;
+      const loadedConfig = JSON.parse(data);
+      
+      // 欠損しているキーをデフォルト値で補完
+      const migratedConfig = this.migrateConfig(loadedConfig);
+      
+      // マイグレーションで変更があった場合は自動保存
+      if (JSON.stringify(loadedConfig) !== JSON.stringify(migratedConfig)) {
+        console.log("� Config migrated with new default keys");
+        await this.saveConfig(migratedConfig);
+      }
+      
+      console.log("�📖 Config loaded successfully");
+      return migratedConfig;
     } catch (error) {
       console.warn("⚠️ Failed to load config, using defaults:", error);
-      return {
-        language: "ja-JP",
-        theme: "light",
-        autoStart: false,
-        checkUpdates: true,
-        logLevel: "info"
-      };
+      return { ...this.DEFAULT_CONFIG };
     }
+  }
+
+  // 設定のマイグレーション（欠損キーを補完）
+  private migrateConfig(config: any): AppConfig {
+    return {
+      ...this.DEFAULT_CONFIG,
+      ...config
+    };
   }
 
   // 設定の保存
@@ -108,14 +154,17 @@ export class DataStorage {
     }
   }
 
-  // サーバー一覧の読み込み
+  // サーバー一覧の読み込み（自動マイグレーション対応）
   public async loadServers(): Promise<Server[]> {
     try {
       const data = await readFile(this.serversPath, 'utf-8');
       const servers = JSON.parse(data);
       
+      // 各サーバーのマイグレーション
+      const migratedServers = servers.map((server: any) => this.migrateServer(server));
+      
       // 日付オブジェクトに変換
-      const processedServers = servers.map((server: any) => ({
+      const processedServers = migratedServers.map((server: any) => ({
         ...server,
         createdAt: new Date(server.createdAt),
         updatedAt: new Date(server.updatedAt),
@@ -125,12 +174,42 @@ export class DataStorage {
         })) || []
       }));
 
+      // マイグレーションで変更があった場合は自動保存
+      const hasChanges = JSON.stringify(servers) !== JSON.stringify(migratedServers);
+      if (hasChanges) {
+        console.log("🔄 Servers migrated with new default keys");
+        await this.saveServers(processedServers);
+      }
+
       console.log(`📖 Loaded ${processedServers.length} servers from storage`);
       return processedServers;
     } catch (error) {
       console.warn("⚠️ Failed to load servers, using empty array:", error);
       return [];
     }
+  }
+
+  // サーバーのマイグレーション（欠損キーを補完）
+  private migrateServer(server: any): any {
+    return {
+      ...this.DEFAULT_SERVER_FIELDS,
+      ...server,
+      // 必須フィールドの保証
+      id: server.id || this.generateId(),
+      name: server.name || 'Unnamed Server',
+      address: server.address || '127.0.0.1:19132',
+      destinationAddress: server.destinationAddress || '127.0.0.1:19133',
+      createdAt: server.createdAt || new Date().toISOString(),
+      updatedAt: server.updatedAt || new Date().toISOString(),
+      // プラグイン設定の保証
+      plugins: server.plugins || {},
+      pluginsEnabled: server.pluginsEnabled ?? false
+    };
+  }
+
+  // 簡易的なID生成
+  private generateId(): string {
+    return `server_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
   }
 
   // サーバー一覧の保存

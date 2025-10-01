@@ -133,6 +133,16 @@ if (!fs.existsSync(exePath)) {
 }
 
 try {
+  // If the destination already exists, remove it so rename can succeed on Windows
+  if (fs.existsSync(targetPath)) {
+    try {
+      fs.unlinkSync(targetPath);
+      console.log('Removed existing target file to allow overwrite:', targetPath);
+    } catch (rmErr) {
+      console.warn('Failed to remove existing target file, will attempt rename/copy anyway:', rmErr);
+    }
+  }
+
   fs.renameSync(exePath, targetPath);
   console.log('Moved to:', targetPath);
   // On Unix-like targets, ensure it's executable
@@ -141,8 +151,29 @@ try {
     console.log('Set executable permission on', targetPath);
   }
 } catch (err) {
-  console.error('Failed to move built file:', err);
-  process.exit(1);
+  console.warn('Rename failed, attempting copy fallback:', err);
+  try {
+    // Fallback to copy then remove source
+    fs.copyFileSync(exePath, targetPath);
+    console.log('Copied to:', targetPath);
+    try {
+      fs.unlinkSync(exePath);
+    } catch (unlinkErr) {
+      // Not fatal; source can be left behind in some environments
+      console.warn('Failed to remove temporary build file after copy:', unlinkErr);
+    }
+    if (!isWinTarget) {
+      try {
+        fs.chmodSync(targetPath, 0o755);
+        console.log('Set executable permission on', targetPath);
+      } catch (chmodErr) {
+        console.warn('Failed to set executable permission on', targetPath, chmodErr);
+      }
+    }
+  } catch (err2) {
+    console.error('Failed to move or copy built file:', err2);
+    process.exit(1);
+  }
 }
 
 console.log('\nDone.');
