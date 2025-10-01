@@ -1,11 +1,12 @@
 /**
  * Plugin Loader Service
  * Manages loading, execution, and lifecycle of plugins
+ * Supports both single-file and folder-based plugins with node_modules
  */
 
-import { readdir, readFile, watch } from 'fs/promises';
-import { existsSync } from 'fs';
-import { join, basename } from 'path';
+import { readdir, readFile, watch, stat } from 'fs/promises';
+import { existsSync, statSync } from 'fs';
+import { join, basename, dirname } from 'path';
 import type { Plugin, PluginMetadata } from '../types';
 
 export class PluginLoader {
@@ -17,6 +18,9 @@ export class PluginLoader {
 
   /**
    * Load all plugins from the plugin directory
+   * Supports both:
+   * - Direct JS files: plugins/myplugin.js
+   * - Folder structure: plugins/myplugin/index.js (with optional node_modules)
    */
   async loadPlugins(): Promise<Plugin[]> {
     const plugins: Plugin[] = [];
@@ -27,23 +31,34 @@ export class PluginLoader {
     }
 
     try {
-      const files = await readdir(this.pluginDirectory);
-      const jsFiles = files.filter(f => f.endsWith('.js'));
+      const entries = await readdir(this.pluginDirectory, { withFileTypes: true });
 
-      for (const file of jsFiles) {
+      for (const entry of entries) {
         try {
-          const plugin = await this.loadPlugin(file);
+          let plugin: Plugin | null = null;
+
+          if (entry.isDirectory()) {
+            // Check for index.js in the folder
+            const indexPath = join(this.pluginDirectory, entry.name, 'index.js');
+            if (existsSync(indexPath)) {
+              plugin = await this.loadPluginFromFolder(entry.name);
+            }
+          } else if (entry.isFile() && entry.name.endsWith('.js')) {
+            // Legacy support: direct .js files
+            plugin = await this.loadPluginFile(entry.name);
+          }
+
           if (plugin) {
             plugins.push(plugin);
             this.plugins.set(plugin.id, plugin);
           }
         } catch (error) {
-          console.error(`Failed to load plugin ${file}:`, error);
+          console.error(`Failed to load plugin ${entry.name}:`, error);
           plugins.push({
-            id: file,
-            metadata: { name: file, version: 'unknown' },
+            id: entry.name,
+            metadata: { name: entry.name, version: 'unknown' },
             enabled: false,
-            filePath: join(this.pluginDirectory, file),
+            filePath: join(this.pluginDirectory, entry.name),
             loaded: false,
             error: String(error)
           });
@@ -57,9 +72,45 @@ export class PluginLoader {
   }
 
   /**
-   * Load a single plugin file
+   * Load a plugin from a folder structure
+   * Folder structure: plugins/pluginName/index.js
+   * Optional: plugins/pluginName/node_modules/ for dependencies
    */
-  private async loadPlugin(filename: string): Promise<Plugin | null> {
+  private async loadPluginFromFolder(folderName: string): Promise<Plugin | null> {
+    const pluginPath = join(this.pluginDirectory, folderName);
+    const indexPath = join(pluginPath, 'index.js');
+    const nodeModulesPath = join(pluginPath, 'node_modules');
+    
+    try {
+      const code = await readFile(indexPath, 'utf-8');
+      
+      // Check if plugin has its own node_modules
+      const hasNodeModules = existsSync(nodeModulesPath);
+      
+      // Parse plugin metadata
+      const metadata = this.parsePluginMetadata(code);
+      
+      const plugin: Plugin = {
+        id: folderName,
+        metadata,
+        enabled: false,
+        filePath: indexPath,
+        loaded: true,
+        hasNodeModules
+      };
+
+      console.log(`Loaded plugin: ${folderName}${hasNodeModules ? ' (with node_modules)' : ''}`);
+      return plugin;
+    } catch (error) {
+      console.error(`Error loading plugin folder ${folderName}:`, error);
+      return null;
+    }
+  }
+
+  /**
+   * Load a single plugin file (legacy support)
+   */
+  private async loadPluginFile(filename: string): Promise<Plugin | null> {
     const filePath = join(this.pluginDirectory, filename);
     
     try {
@@ -76,6 +127,7 @@ export class PluginLoader {
         loaded: true
       };
 
+      console.log(`Loaded plugin file: ${filename}`);
       return plugin;
     } catch (error) {
       console.error(`Error loading plugin ${filename}:`, error);
