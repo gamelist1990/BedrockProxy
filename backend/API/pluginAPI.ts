@@ -260,6 +260,38 @@ export class PluginAPI {
       throw err;
     }
   }
+
+  /**
+   * Proxy Protocol v2 から抽出した真のクライアントIPを取得
+   * @param localAddress ローカルアドレス (例: "127.0.0.1")
+   * @param localPort ローカルポート番号
+   * @returns 真のクライアント情報 {realIP, realPort} または null
+   */
+  async getRealClientIP(localAddress: string, localPort: number): Promise<{realIP: string, realPort: number} | null> {
+    try {
+      // ServerManager経由でUDPProxyインスタンスを取得
+      const udpProxy = this.serverManager.getUdpProxy?.(this.serverId);
+      if (!udpProxy || typeof udpProxy.getRealClientInfo !== 'function') {
+        this.debug('UDPProxy or getRealClientInfo method not available');
+        return null;
+      }
+
+      const realClientInfo = udpProxy.getRealClientInfo(localAddress, localPort);
+      if (!realClientInfo) {
+        this.debug(`No real client info found for ${localAddress}:${localPort}`);
+        return null;
+      }
+
+      this.debug(`Real client IP found: ${realClientInfo.address}:${realClientInfo.port} for ${localAddress}:${localPort}`);
+      return {
+        realIP: realClientInfo.address,
+        realPort: realClientInfo.port
+      };
+    } catch (err) {
+      this.error('Failed to get real client IP', err);
+      return null;
+    }
+  }
   
   // ==================== Events ====================
   

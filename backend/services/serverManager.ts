@@ -164,6 +164,11 @@ export class ServerManager {
     return this.servers.get(id) || null;
   }
 
+  // 特定のサーバーのUDPプロキシを取得 (プラグインAPI用)
+  public getUdpProxy(id: string): UDPProxy | null {
+    return this.udpProxies.get(id) || null;
+  }
+
   // サーバーを追加
   public async addServer(request: ServerAPI.AddServerRequest): Promise<Server> {
     // バリデーション

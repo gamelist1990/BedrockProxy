@@ -373,3 +373,93 @@ function formatIPv6(buffer: Buffer): string {
   }
   return parts.join(':');
 }
+
+/**
+ * Proxy Protocol v2ヘッダーを生成
+ * @param sourceIP 送信元IP(真のクライアントIP)
+ * @param sourcePort 送信元ポート
+ * @param destIP 宛先IP(サーバーIP)
+ * @param destPort 宛先ポート
+ * @returns 生成されたProxy Protocol v2ヘッダー
+ */
+export function generateProxyProtocolV2Header(
+  sourceIP: string,
+  sourcePort: number,
+  destIP: string,
+  destPort: number
+): Buffer {
+  // IPv4かIPv6かを判定
+  const isIPv6 = sourceIP.includes(':');
+  
+  // シグネチャ(12バイト)
+  const signature = Buffer.from(PROXY_V2_SIGNATURE);
+  
+  // バージョン&コマンド(1バイト): version 2, command PROXY
+  const versionAndCommand = 0x21; // 0010 0001
+  
+  // ファミリー&プロトコル(1バイト)
+  let familyAndProtocol: number;
+  if (isIPv6) {
+    familyAndProtocol = 0x22; // INET6 (0010) + DGRAM (0010)
+  } else {
+    familyAndProtocol = 0x12; // INET (0001) + DGRAM (0010)
+  }
+  
+  // アドレス情報を書き込む
+  let addressBuffer: Buffer;
+  
+  if (isIPv6) {
+    // IPv6: 16 + 16 + 2 + 2 = 36バイト
+    addressBuffer = Buffer.alloc(36);
+    
+    // 送信元IPv6アドレス
+    const sourceParts = sourceIP.split(':').map(p => parseInt(p || '0', 16));
+    for (let i = 0; i < 8; i++) {
+      addressBuffer.writeUInt16BE(sourceParts[i] || 0, i * 2);
+    }
+    
+    // 宛先IPv6アドレス
+    const destParts = destIP.split(':').map(p => parseInt(p || '0', 16));
+    for (let i = 0; i < 8; i++) {
+      addressBuffer.writeUInt16BE(destParts[i] || 0, 16 + i * 2);
+    }
+    
+    // ポート番号
+    addressBuffer.writeUInt16BE(sourcePort, 32);
+    addressBuffer.writeUInt16BE(destPort, 34);
+  } else {
+    // IPv4: 4 + 4 + 2 + 2 = 12バイト
+    addressBuffer = Buffer.alloc(12);
+    
+    // 送信元IPv4アドレス
+    const sourceParts = sourceIP.split('.').map(Number);
+    addressBuffer[0] = sourceParts[0];
+    addressBuffer[1] = sourceParts[1];
+    addressBuffer[2] = sourceParts[2];
+    addressBuffer[3] = sourceParts[3];
+    
+    // 宛先IPv4アドレス
+    const destParts = destIP.split('.').map(Number);
+    addressBuffer[4] = destParts[0];
+    addressBuffer[5] = destParts[1];
+    addressBuffer[6] = destParts[2];
+    addressBuffer[7] = destParts[3];
+    
+    // ポート番号
+    addressBuffer.writeUInt16BE(sourcePort, 8);
+    addressBuffer.writeUInt16BE(destPort, 10);
+  }
+  
+  // アドレス長(2バイト、ビッグエンディアン)
+  const addressLength = addressBuffer.length;
+  
+  // ヘッダーを構築
+  const header = Buffer.alloc(16 + addressLength);
+  signature.copy(header, 0);
+  header[12] = versionAndCommand;
+  header[13] = familyAndProtocol;
+  header.writeUInt16BE(addressLength, 14);
+  addressBuffer.copy(header, 16);
+  
+  return header;
+}

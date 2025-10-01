@@ -6,6 +6,7 @@ import {
   parseProxyProtocolV2,
   parseProxyProtocolChain,
   stripProxyProtocolV2Header,
+  generateProxyProtocolV2Header,
   type ProxyProtocolV2Header,
   type ProxyProtocolChain
 } from "./proxyProtocolParser.js";
@@ -147,10 +148,27 @@ export class UDPProxy {
     // 最終アクティビティ時間を更新
     connection.lastActivity = new Date();
 
-    // メッセージを転送（元のペイロードのみ）
-    connection.targetSocket.send(actualData, this.config.targetPort, this.config.targetHost, (error) => {
+    // メッセージを転送
+    // 真のIPが取得できている場合は常にProxy Protocol v2ヘッダーを付加
+    let dataToSend = actualData;
+    if (realClientAddress !== clientAddress) {
+      const proxyHeader = generateProxyProtocolV2Header(
+        realClientAddress,
+        realClientPort,
+        this.config.targetHost,
+        this.config.targetPort
+      );
+      dataToSend = Buffer.concat([proxyHeader, actualData]);
+      
+      logger.debug('udp-proxy', 'Added Proxy Protocol v2 header to outgoing packet', {
+        realClient: `${realClientAddress}:${realClientPort}`,
+        headerSize: proxyHeader.length,
+        payloadSize: actualData.length
+      });
+    }
+
+    connection.targetSocket.send(dataToSend, this.config.targetPort, this.config.targetHost, (error) => {
       if (error) {
-        // Suppress noisy 'Socket is closed' messages; treat them as debug
         if (String(error.message).includes('Socket is closed') || String(error.message).includes('closed')) {
           logger.debug('udp-proxy', 'Failed to forward message to target (socket closed)', {
             client: connectionKey,
@@ -163,12 +181,12 @@ export class UDPProxy {
           });
         }
       } else {
-        // 転送成功時のログ（最初の転送時のみ）
         if (!connection.hasLoggedSuccess) {
           logger.info('udp-proxy', 'Message forwarded successfully', {
             client: connectionKey,
+            realClient: `${realClientAddress}:${realClientPort}`,
             target: `${this.config.targetHost}:${this.config.targetPort}`,
-            size: data.length
+            size: dataToSend.length
           });
           connection.hasLoggedSuccess = true;
         }
@@ -374,4 +392,19 @@ export class UDPProxy {
       blockedConnections: blockedConnections.length
     });
   }
+
+  // 真のクライアント情報を取得(プラグインAPI用)
+  public getRealClientInfo(localAddress: string, localPort: number): { realIP: string; realPort: number } | null {
+    const connectionKey = `${localAddress}:${localPort}`;
+    const connection = this.connections.get(connectionKey);
+    if (connection?.realClientAddress && connection.realClientPort) {
+      return { realIP: connection.realClientAddress, realPort: connection.realClientPort };
+    }
+    const savedInfo = this.realClientInfo.get(localAddress);
+    if (savedInfo) {
+      return { realIP: savedInfo.address, realPort: savedInfo.port };
+    }
+    return null;
+  }
 }
+

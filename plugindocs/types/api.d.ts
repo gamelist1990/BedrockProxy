@@ -312,6 +312,32 @@ export interface PluginAPI {
    * ```
    */
   broadcast(message: string): Promise<void>;
+
+  /**
+   * Proxy Protocol v2 から抽出した真のクライアントIPアドレスを取得します
+   * Playit.gg などのプロキシを経由している場合に、実際のプレイヤーIPを取得できます
+   * 
+   * @param localAddress - ローカルアドレス (例: "127.0.0.1")
+   * @param localPort - ローカルポート番号
+   * @returns 真のクライアント情報 { realIP: string, realPort: number } または null
+   * 
+   * @example
+   * ```javascript
+   * // プレイヤー参加時に真のIPを取得
+   * api.on('playerJoin', async (event) => {
+   *   const player = event.player;
+   *   if (player.ipAddress) {
+   *     const realInfo = await api.getRealClientIP(player.ipAddress, player.port || 0);
+   *     if (realInfo) {
+   *       api.info(`${player.name} の真のIP: ${realInfo.realIP}:${realInfo.realPort}`);
+   *     } else {
+   *       api.info(`${player.name} のIPはプロキシ経由ではありません`);
+   *     }
+   *   }
+   * });
+   * ```
+   */
+  getRealClientIP(localAddress: string, localPort: number): Promise<{ realIP: string; realPort: number } | null>;
   
   // ==================== Events ====================
   
