@@ -34,37 +34,15 @@ console.log('Running bun build --compile ...');
 
 console.log('\nBuild finished. Generated:', outfile);
 
-// 2) 生成ファイルの簡易最適化案: UPX で圧縮 (UPX がインストールされている必要あり)
-//    Windows で upx を使うには upx.exe をインストールして PATH に置くか、bundled upx を使ってください。
-//    注意: UPX による圧縮はアンチウイルスの誤検知が増える可能性があります。
+// 2) 生成ファイルを指定場所に移動
+const targetDir = path.resolve('../app/src-tauri/binaries');
+const targetPath = path.join(targetDir, 'backend-x86_64-pc-windows-msvc.exe');
 
-function tryUpxCompress(exePath) {
-  try {
-    const upx = spawnSync('upx', ['--best', '--ultra-brute', exePath], { stdio: 'inherit' });
-    if (upx.error) {
-      console.warn('UPX not available or failed:', upx.error.message);
-      return false;
-    }
-    if (upx.status !== 0) {
-      console.warn('UPX failed with exit code', upx.status);
-      return false;
-    }
-    return true;
-  } catch (e) {
-    console.warn('UPX compress error', e?.message ?? e);
-    return false;
-  }
+if (!fs.existsSync(targetDir)) {
+  fs.mkdirSync(targetDir, { recursive: true });
 }
 
-const exePath = path.resolve(outfile);
-if (fs.existsSync(exePath)) {
-  console.log('Attempting UPX compression (if upx is installed)...');
-  const ok = tryUpxCompress(exePath);
-  if (ok) console.log('UPX compression done — file size reduced.');
-  else console.log('UPX compression skipped or failed.');
-} else {
-  console.error('Expected output not found:', exePath);
-  process.exit(1);
-}
+fs.renameSync(exePath, targetPath);
+console.log('Moved to:', targetPath);
 
 console.log('\nDone.');
