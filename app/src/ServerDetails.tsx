@@ -178,13 +178,39 @@ function ServerDetails() {
 
       // Wait for WebSocket connection to be established
       if (!bedrockProxyAPI.isConnected()) {
-        console.log("Waiting for WebSocket connection...");
-        let attempts = 0;
-        const maxAttempts = 50; // 5 seconds max wait
+        console.log("[ServerDetails] Waiting for WebSocket connection...");
+        
+        // Check if another component is already connecting
+        if ((window as any).__bedrock_connecting) {
+          console.log('[ServerDetails] Another connect in progress — waiting for established');
+          
+          let settled = false;
+          const onEstablished = () => {
+            if (settled) return;
+            settled = true;
+            console.log('[ServerDetails] Connection established event received');
+          };
 
-        while (!bedrockProxyAPI.isConnected() && attempts < maxAttempts) {
-          await new Promise((resolve) => setTimeout(resolve, 100));
-          attempts++;
+          bedrockProxyAPI.on('connection.established', onEstablished as any);
+
+          // Wait up to 8 seconds for connection
+          let attempts = 0;
+          const maxAttempts = 80;
+          while (!bedrockProxyAPI.isConnected() && attempts < maxAttempts) {
+            await new Promise((resolve) => setTimeout(resolve, 100));
+            attempts++;
+          }
+
+          bedrockProxyAPI.off('connection.established', onEstablished as any);
+        } else {
+          // Normal wait for connection
+          let attempts = 0;
+          const maxAttempts = 50; // 5 seconds max wait
+
+          while (!bedrockProxyAPI.isConnected() && attempts < maxAttempts) {
+            await new Promise((resolve) => setTimeout(resolve, 100));
+            attempts++;
+          }
         }
 
         if (!bedrockProxyAPI.isConnected()) {
@@ -467,12 +493,35 @@ function ServerDetails() {
       try {
         // WebSocket接続確認
         if (!bedrockProxyAPI.isConnected()) {
-          const maxAttempts = 30; // 3秒
-          let attempts = 0;
-          while (!bedrockProxyAPI.isConnected() && attempts < maxAttempts) {
-            await new Promise((resolve) => setTimeout(resolve, 100));
-            attempts++;
+          console.log('[ServerDetails] Waiting for connection before subscribing...');
+          
+          // Check if another component is connecting
+          if ((window as any).__bedrock_connecting) {
+            let settled = false;
+            const onEstablished = () => {
+              if (settled) return;
+              settled = true;
+            };
+
+            bedrockProxyAPI.on('connection.established', onEstablished as any);
+
+            const maxAttempts = 50;
+            let attempts = 0;
+            while (!bedrockProxyAPI.isConnected() && attempts < maxAttempts) {
+              await new Promise((resolve) => setTimeout(resolve, 100));
+              attempts++;
+            }
+
+            bedrockProxyAPI.off('connection.established', onEstablished as any);
+          } else {
+            const maxAttempts = 30; // 3秒
+            let attempts = 0;
+            while (!bedrockProxyAPI.isConnected() && attempts < maxAttempts) {
+              await new Promise((resolve) => setTimeout(resolve, 100));
+              attempts++;
+            }
           }
+          
           if (!bedrockProxyAPI.isConnected()) {
             console.error("❌ WebSocket not connected for subscription");
             return;
@@ -1417,7 +1466,7 @@ function ServerDetails() {
                     />
                     <Chip
                       label={
-                        server.status === "online" ? "ライブ" : "オフライン"
+                        server.status === "online" ? "ライブ" : t("server.status.offline")
                       }
                       color={server.status === "online" ? "success" : "default"}
                       size="small"
@@ -1438,16 +1487,22 @@ function ServerDetails() {
                   server.status !== "online" && (
                     <Alert severity="warning" sx={{ mb: 2 }}>
                       {(server as any).lastExit.code !== null
-                        ? `プロセスは終了しました（exit code: ${
-                            (server as any).lastExit.code
-                          }） - ${new Date(
-                            (server as any).lastExit.time
-                          ).toLocaleString()}`
-                        : `プロセスは終了しました（signal: ${
-                            (server as any).lastExit.signal
-                          }） - ${new Date(
-                            (server as any).lastExit.time
-                          ).toLocaleString()}`}
+                        ? t("console.processExitedExit")
+                            .replace("{code}", (server as any).lastExit.code)
+                            .replace(
+                              "{time}",
+                              new Date(
+                                (server as any).lastExit.time
+                              ).toLocaleString()
+                            )
+                        : t("console.processExitedSignal")
+                            .replace("{signal}", (server as any).lastExit.signal)
+                            .replace(
+                              "{time}",
+                              new Date(
+                                (server as any).lastExit.time
+                              ).toLocaleString()
+                            )}
                     </Alert>
                   )}
 
@@ -1457,7 +1512,7 @@ function ServerDetails() {
                   server.status !== "online" && (
                     <Box sx={{ mb: 2 }}>
                       <Typography variant="caption" color="text.secondary">
-                        直近のコンソール出力（デバッグ用）
+                        {t("console.recentDebugHeader")}
                       </Typography>
                       <Box
                         sx={{
@@ -1574,7 +1629,7 @@ function ServerDetails() {
 
                 {server.status !== "online" && (
                   <Alert severity="info" sx={{ mt: 2 }}>
-                    コンソール機能を使用するにはサーバーをオンラインにしてください
+                    {t("console.useServerOnline")}
                   </Alert>
                 )}
               </Stack>
@@ -2118,7 +2173,7 @@ function ServerDetails() {
             <Stack spacing={3}>
               {/* Basic Info */}
               <Box>
-                <Typography variant="h6" gutterBottom>
+                <Typography variant="subtitle1" fontWeight="bold" gutterBottom>
                   {t("plugins.basicInfo") || "基本情報"}
                 </Typography>
                 <Stack spacing={2}>
@@ -2170,7 +2225,7 @@ function ServerDetails() {
               {/* Description */}
               {selectedPlugin.metadata?.description && (
                 <Box>
-                  <Typography variant="h6" gutterBottom>
+                  <Typography variant="subtitle1" fontWeight="bold" gutterBottom>
                     {t("plugins.description") || "説明"}
                   </Typography>
                   <Typography variant="body1">
@@ -2181,7 +2236,7 @@ function ServerDetails() {
 
               {/* Technical Details */}
               <Box>
-                <Typography variant="h6" gutterBottom>
+                <Typography variant="subtitle1" fontWeight="bold" gutterBottom>
                   {t("plugins.technicalDetails") || "技術詳細"}
                 </Typography>
                 <Stack spacing={2}>
@@ -2249,7 +2304,7 @@ function ServerDetails() {
                 Object.keys(selectedPlugin.metadata.dependencies).length >
                   0 && (
                   <Box>
-                    <Typography variant="h6" gutterBottom>
+                    <Typography variant="subtitle1" fontWeight="bold" gutterBottom>
                       {t("plugins.dependencies") || "依存関係"}
                     </Typography>
                     <Stack direction="row" spacing={1} flexWrap="wrap">
@@ -2271,7 +2326,7 @@ function ServerDetails() {
               {selectedPlugin.metadata?.keywords &&
                 selectedPlugin.metadata.keywords.length > 0 && (
                   <Box>
-                    <Typography variant="h6" gutterBottom>
+                    <Typography variant="subtitle1" fontWeight="bold" gutterBottom>
                       {t("plugins.keywords") || "キーワード"}
                     </Typography>
                     <Stack direction="row" spacing={1} flexWrap="wrap">
@@ -2294,7 +2349,7 @@ function ServerDetails() {
               {(selectedPlugin.metadata?.homepage ||
                 selectedPlugin.metadata?.minBedrockProxyVersion) && (
                 <Box>
-                  <Typography variant="h6" gutterBottom>
+                  <Typography variant="subtitle1" fontWeight="bold" gutterBottom>
                     {t("plugins.additionalInfo") || "追加情報"}
                   </Typography>
                   <Stack spacing={1}>

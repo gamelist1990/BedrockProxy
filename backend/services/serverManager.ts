@@ -189,6 +189,7 @@ export class ServerManager {
       address: request.address,
       destinationAddress: request.destinationAddress,
       status: "offline",
+      mode: request.mode || "normal", // デフォルトはnormal
       playersOnline: 0,
       maxPlayers: request.maxPlayers,
       iconUrl: request.iconUrl,
@@ -202,6 +203,7 @@ export class ServerManager {
       executablePath: request.executablePath,
       serverDirectory: request.serverDirectory,
       players: [],
+      udpConnections: [], // Proxy Onlyモード用
       createdAt: now,
       updatedAt: now,
     };
@@ -228,6 +230,11 @@ export class ServerManager {
     } catch (error) {
       console.error("❌ Failed to save servers to storage:", error);
     }
+  }
+
+  // データストレージへの保存 (public wrapper)
+  public async saveServers(): Promise<void> {
+    await this.saveServersToStorage();
   }
 
   // サーバーを更新
@@ -1099,6 +1106,11 @@ export class ServerManager {
 
     if (request.maxPlayers < 1 || request.maxPlayers > 1000) {
       throw new APIError("Max players must be between 1 and 1000", "INVALID_MAX_PLAYERS", 400);
+    }
+
+    // Proxy Onlyモードの場合はexecutablePathは不要
+    if (request.mode !== "proxyOnly" && !request.executablePath) {
+      console.warn("⚠️ Server added without executablePath (normal mode). Server process management may not work.");
     }
   }
 

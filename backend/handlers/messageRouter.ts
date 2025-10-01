@@ -308,17 +308,48 @@ export class MessageRouter {
 
   // Graceful stop: request ServerManager to stop all running servers
   public async stopAllServers(): Promise<void> {
+    console.log('🛡️ Stopping all servers before shutdown...');
     try {
       const servers = this.serverManager.getServers();
+      const stopPromises: Promise<void>[] = [];
+      
       for (const s of servers) {
         if (s.status && s.status !== 'offline') {
-          try {
-            await this.serverManager.performServerAction({ id: s.id, action: 'stop' });
-          } catch (e) {
-            console.warn(`⚠️ Failed to stop server ${s.name} during shutdown:`, e);
-          }
+          console.log(`🛑 Stopping server: ${s.name} (${s.id})`);
+          stopPromises.push(
+            this.serverManager.performServerAction({ id: s.id, action: 'stop' })
+              .then(() => {
+                console.log(`✅ Server stopped: ${s.name}`);
+              })
+              .catch((e) => {
+                console.warn(`⚠️ Failed to stop server ${s.name} during shutdown:`, e);
+              })
+          );
         }
       }
+      
+      // Wait for all stop operations to complete (with timeout)
+      await Promise.race([
+        Promise.allSettled(stopPromises),
+        new Promise((resolve) => setTimeout(resolve, 10000)) // 10秒タイムアウト
+      ]);
+      
+      // Force all servers to offline state
+      for (const s of servers) {
+        if (s.status !== 'offline') {
+          console.log(`💾 Force setting ${s.name} to offline`);
+          s.status = 'offline';
+          s.playersOnline = 0;
+          if (s.players) s.players = [];
+        }
+      }
+      
+      // Save final state
+      await this.serverManager.saveServers().catch(e => {
+        console.warn('⚠️ Failed to save server state during shutdown:', e);
+      });
+      
+      console.log('✅ All servers stopped and set to offline');
     } catch (err) {
       console.error('❌ Error while stopping all servers:', err);
     }

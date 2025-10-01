@@ -110,6 +110,7 @@ function ServerList() {
     autoRestart: false,
     blockSameIP: false,
     forwardAddress: "",
+    mode: "normal" as "normal" | "proxyOnly",
   });
 
   // 削除ダイアログ管理
@@ -758,6 +759,7 @@ function ServerList() {
       autoRestart: false,
       blockSameIP: false,
       forwardAddress: "",
+      mode: "normal" as "normal" | "proxyOnly",
     });
   };
 
@@ -1215,14 +1217,58 @@ function ServerList() {
           PaperProps={{ sx: { minHeight: "70vh" } }}
         >
           <DialogTitle>
-            <Typography variant="h6">{t("server.addFromExe")}</Typography>
+            <Typography variant="h6">{t("server.add")}</Typography>
             <Typography variant="body2" color="text.secondary">
-              exeファイルから自動的にサーバー設定を検知して追加します
+              {newServerData.mode === "proxyOnly"
+                ? t("server.mode.proxyOnlyDescription") || "プロキシサーバーのみを起動します（exe不要）"
+                : t("server.mode.normalDescription") || "exeファイルから自動的にサーバー設定を検知して追加します"}
             </Typography>
           </DialogTitle>
 
           <DialogContent>
             <Stack spacing={4} sx={{ mt: 2 }}>
+              <Card variant="outlined">
+                <CardContent>
+                  <Typography variant="subtitle2" gutterBottom>
+                    {t("server.mode") || "サーバーモード"}
+                  </Typography>
+                  <Typography
+                    variant="body2"
+                    color="text.secondary"
+                    sx={{ mb: 2 }}
+                  >
+                    {t("server.mode.selectDescription") || "追加するサーバーのモードを選択してください"}
+                  </Typography>
+                  <Stack direction="row" spacing={2}>
+                    <Button
+                      variant={newServerData.mode === "normal" ? "contained" : "outlined"}
+                      onClick={() =>
+                        setNewServerData((prev) => ({
+                          ...prev,
+                          mode: "normal",
+                        }))
+                      }
+                      fullWidth
+                    >
+                      {t("server.mode.normal") || "通常モード (exe必須)"}
+                    </Button>
+                    <Button
+                      variant={newServerData.mode === "proxyOnly" ? "contained" : "outlined"}
+                      onClick={() =>
+                        setNewServerData((prev) => ({
+                          ...prev,
+                          mode: "proxyOnly",
+                        }))
+                      }
+                      fullWidth
+                    >
+                      {t("server.mode.proxyOnly") || "Proxy Only (exe不要)"}
+                    </Button>
+                  </Stack>
+                </CardContent>
+              </Card>
+
+              {newServerData.mode === "normal" && (
               <Card variant="outlined">
                 <CardContent>
                   <Typography variant="subtitle2" gutterBottom>
@@ -1280,6 +1326,7 @@ function ServerList() {
                   )}
                 </CardContent>
               </Card>
+              )}
 
               <Grid container spacing={3}>
                 <Grid size={{ xs: 12, md: 6 }}>
@@ -1496,11 +1543,11 @@ function ServerList() {
               onClick={handleAddServer}
               variant="contained"
               disabled={
-                !serverExePath ||
-                !detectedConfig ||
                 !newServerData.name ||
                 !newServerData.address ||
-                !newServerData.destinationAddress
+                !newServerData.destinationAddress ||
+                (newServerData.mode === "normal" &&
+                  (!serverExePath || !detectedConfig))
               }
             >
               {t("server.add")}

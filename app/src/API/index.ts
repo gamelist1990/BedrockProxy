@@ -274,6 +274,7 @@ export class BedrockProxyAPI {
     address: string;
     destinationAddress: string;
     maxPlayers: number;
+    mode?: "normal" | "proxyOnly";
     iconUrl?: string;
     tags?: string[];
     description?: string;

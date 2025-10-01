@@ -102,6 +102,8 @@ export const ja_JP = {
   "common.loading": "読み込み中...",
   "common.error": "エラーが発生しました",
   "common.servers": "サーバー",
+  "common.unsavedChanges": "未保存の変更があります",
+  "common.unsavedChangesMessage": "操作パネルに未保存の変更があります。保存しますか？",
   
   // サーバーリスト・管理
   "server.managedServers": "管理中のサーバー",
@@ -255,6 +257,14 @@ export const ja_JP = {
   "plugins.reload": "更新",
   "plugins.reloaded": "プラグインをリロードしました",
   "plugins.reloadFailed": "プラグインのリロードに失敗しました",
+
+  // サーバーモード関連
+  "server.mode": "サーバーモード",
+  "server.mode.normal": "通常モード (exe必須)",
+  "server.mode.proxyOnly": "Proxy Only (exe不要)",
+  "server.mode.selectDescription": "追加するサーバーのモードを選択してください",
+  "server.mode.normalDescription": "exeファイルから自動的にサーバー設定を検知して追加します",
+  "server.mode.proxyOnlyDescription": "プロキシサーバーのみを起動します(exe不要)",
 };
 
 export default ja_JP;

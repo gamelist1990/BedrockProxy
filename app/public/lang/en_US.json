@@ -178,6 +178,13 @@
   "connection.disconnected": "Connection disconnected",
   "console.unavailable": "Console is not available: no server process running (proxy-only or not started)",
 
+  "server.mode": "Server Mode",
+  "server.mode.normal": "Normal Mode (exe required)",
+  "server.mode.proxyOnly": "Proxy Only (exe not required)",
+  "server.mode.selectDescription": "Select the server mode to add",
+  "server.mode.normalDescription": "Automatically detect server settings from exe file",
+  "server.mode.proxyOnlyDescription": "Start proxy server only (exe not required)",
+
   "tab.plugins": "Plugins",
 
   "plugins.title": "Plugin Management",
@@ -213,5 +220,14 @@
   "plugins.loadError": "Load Error",
   "plugins.reload": "Reload",
   "plugins.reloaded": "Plugin reloaded successfully",
-  "plugins.reloadFailed": "Failed to reload plugin"
+  "plugins.reloadFailed": "Failed to reload plugin",
+  "plugins.enablePlugins": "Enable Plugins",
+  "plugins.enableDesc": "Enable plugin system to add extensions",
+  "plugins.installedPlugins": "Installed Plugins",
+  "plugins.requirement": "Requirements",
+  "plugins.folder": "Folder",
+
+  "common.close": "Close",
+  "common.unsavedChanges": "Unsaved Changes",
+  "common.unsavedChangesMessage": "You have unsaved changes in the operations panel. Would you like to save them?"
 }
