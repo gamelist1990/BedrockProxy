@@ -7,7 +7,11 @@
 }
 
 export interface LogEntry {
-  timestamp: Date;
+  t  public error(category: string, message: string, data?: any, clientId?: string, requestId?: string): void {
+    if (!this.shouldLog(LogLevel.ERROR)) return;
+
+    // Skip broadcasting ServerManager logs to console.output (udp-proxy logs are now included)
+    const skipBroadcast = category === 'ServerManager';amp: Date;
   level: LogLevel;
   category: string;
   message: string;

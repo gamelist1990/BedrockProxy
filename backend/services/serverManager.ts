@@ -14,7 +14,7 @@ import { dataStorage } from "./dataStorage.js";
 import { minecraftServerDetector, type DetectedServerInfo } from "./minecraftServerDetector.js";
 import { processManager } from "./processManager.js";
 import { UDPProxy } from "./udpProxy.js";
-import { logger } from "./logger.js";
+import { logger, LogLevel } from "./logger.js";
 import { PluginLoader } from "./pluginLoader.js";
 
 export class ServerManager {
@@ -1145,6 +1145,24 @@ export class ServerManager {
       // 実行中プロセスがあれば通常のバッファを返す
       if (procInfo && processManager.isProcessRunning(serverId)) {
         return processManager.getConsoleOutput(serverId, lineCount);
+      }
+
+      // Proxy Onlyモードの場合はUDPプロキシのログを表示
+      if (server && server.mode === "proxyOnly") {
+        const udpLogs = logger.getLogs({
+          category: 'udp-proxy',
+          limit: lineCount || 50
+        });
+
+        if (udpLogs.length > 0) {
+          return udpLogs.map(log => {
+            const time = log.timestamp.toLocaleTimeString();
+            const level = LogLevel[log.level].toUpperCase();
+            return `[${time}] [${level}] ${log.message}`;
+          });
+        } else {
+          return ["Proxy active: waiting for connections..."];
+        }
       }
 
       // プロセスが存在しない／停止中の場合は、サーバーに保存された直近のスニペットや終了情報を返す

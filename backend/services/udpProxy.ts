@@ -14,6 +14,8 @@ export interface ProxyConnection {
   clientPort: number;
   targetSocket: Socket;
   lastActivity: Date;
+  hasLoggedSuccess?: boolean;
+  hasLoggedResponseSuccess?: boolean;
 }
 
 export class UDPProxy {
@@ -67,7 +69,7 @@ export class UDPProxy {
       connection = this.createConnection(clientAddress, clientPort);
       this.connections.set(connectionKey, connection);
       
-      logger.debug('udp-proxy', 'New connection established', {
+      logger.info('udp-proxy', 'New connection established', {
         client: connectionKey,
         target: `${this.config.targetHost}:${this.config.targetPort}`
       });
@@ -91,12 +93,28 @@ export class UDPProxy {
             error: error.message
           });
         }
+      } else {
+        // 転送成功時のログ（最初の転送時のみ）
+        if (!connection.hasLoggedSuccess) {
+          logger.info('udp-proxy', 'Message forwarded successfully', {
+            client: connectionKey,
+            target: `${this.config.targetHost}:${this.config.targetPort}`,
+            size: data.length
+          });
+          connection.hasLoggedSuccess = true;
+        }
       }
     });
   }
 
   private createConnection(clientAddress: string, clientPort: number): ProxyConnection {
     const targetSocket = createSocket('udp4');
+    const connection: ProxyConnection = {
+      clientAddress,
+      clientPort,
+      targetSocket,
+      lastActivity: new Date()
+    };
     
     // ターゲットからのレスポンスを処理
     targetSocket.on('message', (data) => {
@@ -113,6 +131,16 @@ export class UDPProxy {
               error: error.message
             });
           }
+        } else {
+          // レスポンス転送成功時のログ（最初のレスポンス時のみ）
+          if (!connection.hasLoggedResponseSuccess) {
+            logger.info('udp-proxy', 'Response forwarded to client', {
+              client: `${clientAddress}:${clientPort}`,
+              target: `${this.config.targetHost}:${this.config.targetPort}`,
+              size: data.length
+            });
+            connection.hasLoggedResponseSuccess = true;
+          }
         }
       });
     });
@@ -124,12 +152,7 @@ export class UDPProxy {
       });
     });
 
-    return {
-      clientAddress,
-      clientPort,
-      targetSocket,
-      lastActivity: new Date()
-    };
+    return connection;
   }
 
   public start(): Promise<void> {

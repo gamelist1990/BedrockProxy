@@ -611,6 +611,24 @@ function ServerList() {
     };
 
     try {
+      // サーバー起動前にポート重複チェック
+      if (action === "start" || action === "restart") {
+        const runningServers = servers.filter(s =>
+          s.status === "online" || s.status === "starting"
+        );
+
+        // 同じアドレス（受信ポート）を使っているサーバーを探す
+        const conflictingServers = runningServers.filter(s =>
+          s.id !== server.id && s.address === server.address
+        );
+
+        if (conflictingServers.length > 0) {
+          const serverNames = [server.name, ...conflictingServers.map(s => s.name)].join(", ");
+          setActionMessage(`${serverNames} の受信ポートが重複しているため起動できません`);
+          return;
+        }
+      }
+
       setActionMessage(`${server.name} ${actionMessages[action]}`);
       const updated = await bedrockProxyAPI.performServerAction(
         server.id,
@@ -631,6 +649,7 @@ function ServerList() {
   };
 
   const handleRegister = () => {
+    resetAddServerDialog();
     setAddServerDialog(true);
   };
 
@@ -715,6 +734,28 @@ function ServerList() {
 
   const handleAddServer = async () => {
     try {
+      // Proxy Onlyモードの場合、直接サーバー情報を追加
+      if (newServerData.mode === "proxyOnly") {
+        if (
+          !newServerData.name ||
+          !newServerData.address ||
+          !newServerData.destinationAddress
+        ) {
+          setActionMessage(t("server.addValidationError"));
+          return;
+        }
+
+        const server = await bedrockProxyAPI.addServer({
+          ...newServerData,
+          mode: "proxyOnly"
+        });
+
+        setActionMessage(`${server.name} ${t("server.actionCreated")}`);
+        resetAddServerDialog();
+        return;
+      }
+
+      // Normalモードの場合、exeファイルの検知が必要
       if (!serverExePath || !detectedConfig) {
         setActionMessage("exeファイルを指定して検知を実行してください");
         return;
@@ -743,15 +784,70 @@ function ServerList() {
     }
   };
 
+  const updateAddressesForMode = (mode: "normal" | "proxyOnly") => {
+    const usedAddresses = new Set(servers.map(s => s.address));
+    const usedDestinationAddresses = new Set(servers.map(s => s.destinationAddress));
+
+    let addressPort = mode === "proxyOnly" ? 19133 : 19132;
+    let destinationPort = mode === "proxyOnly" ? 19132 : 19131;
+
+    // 現在のアドレスが使用可能かチェック
+    const currentAddress = newServerData.address;
+    const currentDestination = newServerData.destinationAddress;
+
+    if (!usedAddresses.has(currentAddress) && !usedDestinationAddresses.has(currentDestination)) {
+      return; // 現在のアドレスが使用可能なら変更しない
+    }
+
+    // 新しい使用可能なアドレスを探す
+    while (usedAddresses.has(`127.0.0.1:${addressPort}`)) {
+      addressPort++;
+    }
+
+    while (usedDestinationAddresses.has(`127.0.0.1:${destinationPort}`)) {
+      destinationPort++;
+    }
+
+    setNewServerData((prev) => ({
+      ...prev,
+      address: `127.0.0.1:${addressPort}`,
+      destinationAddress: `127.0.0.1:${destinationPort}`,
+    }));
+  };
+
   const resetAddServerDialog = () => {
     setAddServerDialog(false);
     setDetectedConfig(null);
     setServerExePath("");
     setIsDetecting(false);
+
+    // 使用可能なアドレスを自動生成
+    const generateAvailableAddress = (mode: "normal" | "proxyOnly"): string => {
+      const usedAddresses = new Set(servers.map(s => s.address));
+      let port = mode === "proxyOnly" ? 19133 : 19132;
+
+      while (usedAddresses.has(`127.0.0.1:${port}`)) {
+        port++;
+      }
+
+      return `127.0.0.1:${port}`;
+    };
+
+    const generateAvailableDestinationAddress = (mode: "normal" | "proxyOnly"): string => {
+      const usedAddresses = new Set(servers.map(s => s.destinationAddress));
+      let port = mode === "proxyOnly" ? 19132 : 19131;
+
+      while (usedAddresses.has(`127.0.0.1:${port}`)) {
+        port++;
+      }
+
+      return `127.0.0.1:${port}`;
+    };
+
     setNewServerData({
       name: "",
-      address: "127.0.0.1:19133",
-      destinationAddress: "127.0.0.1:19132",
+      address: generateAvailableAddress("normal"),
+      destinationAddress: generateAvailableDestinationAddress("normal"),
       maxPlayers: 10,
       description: "",
       tags: [],
@@ -1217,15 +1313,15 @@ function ServerList() {
           PaperProps={{ sx: { minHeight: "70vh" } }}
         >
           <DialogTitle>
-            <Typography variant="h6">{t("server.add")}</Typography>
-            <Typography variant="body2" color="text.secondary">
+            {t("server.add")}
+          </DialogTitle>
+
+          <DialogContent>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
               {newServerData.mode === "proxyOnly"
                 ? t("server.mode.proxyOnlyDescription") || "プロキシサーバーのみを起動します（exe不要）"
                 : t("server.mode.normalDescription") || "exeファイルから自動的にサーバー設定を検知して追加します"}
             </Typography>
-          </DialogTitle>
-
-          <DialogContent>
             <Stack spacing={4} sx={{ mt: 2 }}>
               <Card variant="outlined">
                 <CardContent>
@@ -1242,24 +1338,26 @@ function ServerList() {
                   <Stack direction="row" spacing={2}>
                     <Button
                       variant={newServerData.mode === "normal" ? "contained" : "outlined"}
-                      onClick={() =>
+                      onClick={() => {
                         setNewServerData((prev) => ({
                           ...prev,
                           mode: "normal",
-                        }))
-                      }
+                        }));
+                        updateAddressesForMode("normal");
+                      }}
                       fullWidth
                     >
                       {t("server.mode.normal") || "通常モード (exe必須)"}
                     </Button>
                     <Button
                       variant={newServerData.mode === "proxyOnly" ? "contained" : "outlined"}
-                      onClick={() =>
+                      onClick={() => {
                         setNewServerData((prev) => ({
                           ...prev,
                           mode: "proxyOnly",
-                        }))
-                      }
+                        }));
+                        updateAddressesForMode("proxyOnly");
+                      }}
                       fullWidth
                     >
                       {t("server.mode.proxyOnly") || "Proxy Only (exe不要)"}

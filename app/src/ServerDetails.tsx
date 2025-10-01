@@ -295,16 +295,8 @@ function ServerDetails() {
         }
 
         const consoleData = await bedrockProxyAPI.getServerConsole(id);
-        // backend が返すメッセージがプレースホルダの場合は翻訳キーに置き換える
-        if (
-          consoleData.lines &&
-          consoleData.lines.length === 1 &&
-          /no server process running/i.test(consoleData.lines[0])
-        ) {
-          setConsoleLines([t("console.unavailable")]);
-        } else {
-          setConsoleLines(consoleData.lines);
-        }
+        // Proxy Onlyモードの場合はUDPプロキシのログが表示される
+        setConsoleLines(consoleData.lines);
       } catch (err) {
         console.error("Failed to load console:", err);
         setConsoleLines([t("console.output")]);
@@ -638,6 +630,29 @@ function ServerDetails() {
   // サーバー操作
   const handleServerAction = async (action: "start" | "stop" | "restart") => {
     try {
+      // サーバー起動前にポート重複チェック
+      if (action === "start" || action === "restart") {
+        // 親コンポーネントからserversリストを取得する必要がある
+        // ここでは簡易的にローカルチェックを行う
+        const response = await bedrockProxyAPI.getServers();
+        const runningServers = response.filter(s =>
+          s.status === "online" || s.status === "starting"
+        );
+
+        // 同じアドレス（受信ポート）を使っているサーバーを探す
+        const conflictingServers = runningServers.filter(s =>
+          s.id !== server.id && s.address === server.address
+        );
+
+        if (conflictingServers.length > 0) {
+          const serverNames = [server.name, ...conflictingServers.map(s => s.name)].join(", ");
+          setSnackbarMessage(`${serverNames} の受信ポートが重複しているため起動できません`);
+          setSnackbarSeverity("error");
+          setSnackbarOpen(true);
+          return;
+        }
+      }
+
       // WebSocket接続確認
       if (!bedrockProxyAPI.isConnected()) {
         const maxAttempts = 30; // 3秒
