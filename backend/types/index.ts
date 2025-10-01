@@ -2,6 +2,8 @@
 
 export type ServerStatus = "online" | "offline" | "starting" | "stopping" | "error";
 
+export type ServerMode = "normal" | "proxyOnly"; // New: Server operation mode
+
 export interface Player {
   id: string;
   name: string;
@@ -11,6 +13,16 @@ export interface Player {
   ipAddress?: string;
   port?: number;
   icon?: string; // base64エンコードされたプレイヤーアイコン
+}
+
+// UDP Connection (for Proxy Only mode)
+export interface UDPConnection {
+  id: string;
+  ipAddress: string;
+  port: number;
+  connectTime: Date;
+  disconnectTime?: Date;
+  isActive: boolean;
 }
 
 // プレイヤーアクションの型
@@ -33,6 +45,7 @@ export interface Server {
   address: string; // 受信用アドレス（例: 127.0.0.1:19132）
   destinationAddress: string; // 転送先アドレス（例: 192.168.1.10:19132）
   status: ServerStatus;
+  mode?: ServerMode; // Operation mode: "normal" or "proxyOnly"
   playersOnline: number;
   maxPlayers: number;
   iconUrl?: string;
@@ -44,7 +57,8 @@ export interface Server {
   pluginsEnabled?: boolean; // プラグインシステムの有効/無効
   description?: string;
   players?: Player[];
-  executablePath?: string; // サーバー実行ファイルのパス
+  udpConnections?: UDPConnection[]; // For Proxy Only mode
+  executablePath?: string; // サーバー実行ファイルのパス (Not required for proxyOnly)
   serverDirectory?: string; // サーバーディレクトリのパス
   createdAt: Date;
   updatedAt: Date;
@@ -88,6 +102,7 @@ export namespace ServerAPI {
     name: string;
     address: string;
     destinationAddress: string;
+    mode?: ServerMode; // Operation mode: "normal" or "proxyOnly"
     maxPlayers: number;
     iconUrl?: string;
     tags?: string[];
@@ -96,7 +111,7 @@ export namespace ServerAPI {
     autoRestart?: boolean;
     blockSameIP?: boolean;
     forwardAddress?: string;
-    executablePath?: string; // サーバー実行ファイルのパス
+    executablePath?: string; // サーバー実行ファイルのパス (Not required for proxyOnly)
     serverDirectory?: string; // サーバーディレクトリのパス
   }
   export interface AddServerResponse {
