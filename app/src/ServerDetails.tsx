@@ -194,12 +194,24 @@ function ServerDetails() {
   const handleServerUpdated = useCallback((data: any) => {
     if (data?.server?.id === id) {
       setServer(data.server);
+      // Update settings state when server data is updated
+      if (data.server.autoStart !== undefined) setAutoStart(data.server.autoStart);
+      if (data.server.autoRestart !== undefined) setAutoRestart(data.server.autoRestart);
+      if (data.server.blockSameIP !== undefined) setBlockSameIP(data.server.blockSameIP);
+      if (data.server.forwardAddress !== undefined) setForwardAddress(data.server.forwardAddress);
     }
   }, [id]);
 
   const handleServerStatusChanged = useCallback((data: any) => {
     if (data?.serverId === id) {
       setServer(data.server);
+      // Update settings state when server status changes
+      if (data.server) {
+        if (data.server.autoStart !== undefined) setAutoStart(data.server.autoStart);
+        if (data.server.autoRestart !== undefined) setAutoRestart(data.server.autoRestart);
+        if (data.server.blockSameIP !== undefined) setBlockSameIP(data.server.blockSameIP);
+        if (data.server.forwardAddress !== undefined) setForwardAddress(data.server.forwardAddress);
+      }
     }
   }, [id]);
 
