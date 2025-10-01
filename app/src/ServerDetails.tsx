@@ -35,6 +35,7 @@ import { useLanguageContext } from "./contexts/LanguageContext";
 import PlayArrowRoundedIcon from "@mui/icons-material/PlayArrowRounded";
 import StopRoundedIcon from "@mui/icons-material/StopRounded";
 import RestartAltRoundedIcon from "@mui/icons-material/RestartAltRounded";
+import SaveIcon from "@mui/icons-material/Save";
 import { bedrockProxyAPI, type Server, type Player, type ServerStatus } from "./API";
 import ServerAvatar from './components/ServerAvatar';
 
@@ -603,9 +604,58 @@ function ServerDetails() {
 
           <TabPanel value="overview" current={activeTab}>
             <CardContent className="tab-panel-content">
-              <Typography variant="subtitle2" className="section-title">
-                {t('settings.basic')}
-              </Typography>
+              <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 2 }}>
+                <Typography variant="subtitle2" className="section-title">
+                  {t('settings.basic')}
+                </Typography>
+                <Button 
+                  variant="contained" 
+                  color="primary" 
+                  startIcon={<SaveIcon />}
+                  onClick={async () => {
+                    // Save basic settings: name, destinationAddress, listen address, maxPlayers, iconUrl
+                    try {
+                      // validate ports
+                      const listenPortNum = Number(editListenPort);
+                      const destPortNum = Number(editDestPort);
+                      if (!Number.isInteger(listenPortNum) || listenPortNum < 1 || listenPortNum > 65535) {
+                        setSnackbarMessage(t('settings.invalidPort') || 'Invalid listening port');
+                        setSnackbarSeverity('error');
+                        setSnackbarOpen(true);
+                        return;
+                      }
+                      if (!Number.isInteger(destPortNum) || destPortNum < 1 || destPortNum > 65535) {
+                        setSnackbarMessage(t('settings.invalidPort') || 'Invalid destination port');
+                        setSnackbarSeverity('error');
+                        setSnackbarOpen(true);
+                        return;
+                      }
+
+                      const dest = `${editDestIP}:${editDestPort}`;
+                      const address = `${editListenIP}:${editListenPort}`;
+                      const updates: any = {
+                        name: editName,
+                        destinationAddress: dest,
+                        address,
+                        maxPlayers: editMaxPlayers,
+                        iconUrl: editIconUrl || undefined,
+                        docs: editDocs || undefined,
+                      };
+                      await bedrockProxyAPI.updateServer(server.id, updates);
+                      setSnackbarMessage(t('settings.saveSuccess') || 'Settings saved successfully!');
+                      setSnackbarSeverity('success');
+                      setSnackbarOpen(true);
+                    } catch (err) {
+                      console.error('Failed to save settings', err);
+                      setSnackbarMessage(t('settings.saveFailed') || 'Failed to save settings');
+                      setSnackbarSeverity('error');
+                      setSnackbarOpen(true);
+                    }
+                  }}
+                >
+                  {t('form.save')}
+                </Button>
+              </Stack>
               <Grid container spacing={3} className="overview-grid">
                 <Grid size={{ xs: 12, md: 6 }}>
                   <Stack spacing={2} className="form-stack">
@@ -662,49 +712,6 @@ function ServerDetails() {
 
                     <TextField className="form-field" label={t('form.maxPlayers')} value={String(editMaxPlayers)} onChange={(e) => setEditMaxPlayers(Number(e.target.value))} type="number" fullWidth />
                     <TextField className="form-field" label={t('form.iconUrl')} value={editIconUrl} onChange={(e) => setEditIconUrl(e.target.value)} fullWidth />
-
-                    <Stack direction="row" spacing={2} justifyContent="flex-end" sx={{ mt: 1 }}>
-                      <Button variant="contained" color="primary" onClick={async () => {
-                        // Save basic settings: name, destinationAddress, listen address, maxPlayers, iconUrl
-                        try {
-                          // validate ports
-                          const listenPortNum = Number(editListenPort);
-                          const destPortNum = Number(editDestPort);
-                          if (!Number.isInteger(listenPortNum) || listenPortNum < 1 || listenPortNum > 65535) {
-                            setSnackbarMessage(t('settings.invalidPort') || 'Invalid listening port');
-                            setSnackbarSeverity('error');
-                            setSnackbarOpen(true);
-                            return;
-                          }
-                          if (!Number.isInteger(destPortNum) || destPortNum < 1 || destPortNum > 65535) {
-                            setSnackbarMessage(t('settings.invalidPort') || 'Invalid destination port');
-                            setSnackbarSeverity('error');
-                            setSnackbarOpen(true);
-                            return;
-                          }
-
-                          const dest = `${editDestIP}:${editDestPort}`;
-                          const address = `${editListenIP}:${editListenPort}`;
-                          const updates: any = {
-                            name: editName,
-                            destinationAddress: dest,
-                            address,
-                            maxPlayers: editMaxPlayers,
-                            iconUrl: editIconUrl || undefined,
-                            docs: editDocs || undefined,
-                          };
-                          await bedrockProxyAPI.updateServer(server.id, updates);
-                          setSnackbarMessage(t('settings.saveTriggered') || 'Saving...');
-                          setSnackbarSeverity('info');
-                          setSnackbarOpen(true);
-                        } catch (err) {
-                          console.error('Failed to save settings', err);
-                          setSnackbarMessage(t('settings.saveFailed') || 'Failed to save settings');
-                          setSnackbarSeverity('error');
-                          setSnackbarOpen(true);
-                        }
-                      }}> {t('form.save') } </Button>
-                    </Stack>
                   </Stack>
                 </Grid>
                 <Grid size={{ xs: 12, md: 6 }}>
