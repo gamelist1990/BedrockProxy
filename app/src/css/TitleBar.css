@@ -4,7 +4,7 @@
   left: 0;
   right: 0;
   z-index: 10000;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
 }
 
 .titlebar-buttons {
@@ -12,17 +12,12 @@
   align-items: center;
 }
 
-.titlebar-button {
-  transition: background-color 0.2s ease;
+.mac-button {
+  transition: all 0.15s ease;
 }
 
-.titlebar-button svg {
-  width: 16px;
-  height: 16px;
-}
-
-.titlebar-close:hover {
-  background-color: #e81123 !important;
+.mac-button:active {
+  transform: scale(0.95);
 }
 
 /* Ensure content doesn't go under titlebar */
