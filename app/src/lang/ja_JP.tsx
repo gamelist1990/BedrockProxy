@@ -95,6 +95,7 @@ export const ja_JP = {
   "common.edit": "編集",
   "common.delete": "削除",
   "common.add": "追加",
+  "common.close": "閉じる",
   "common.loading": "読み込み中...",
   "common.error": "エラーが発生しました",
   "common.servers": "サーバー",
@@ -235,6 +236,19 @@ export const ja_JP = {
   "plugins.refreshed": "更新しました",
   "plugins.openFolder": "フォルダを開く",
   "plugins.openFolderFailed": "フォルダを開けませんでした",
+  "plugins.basicInfo": "基本情報",
+  "plugins.name": "名前",
+  "plugins.license": "ライセンス",
+  "plugins.technicalDetails": "技術詳細",
+  "plugins.pluginId": "プラグインID",
+  "plugins.status": "状態",
+  "plugins.loaded": "読み込み済み",
+  "plugins.filePath": "ファイルパス",
+  "plugins.pluginPath": "プラグインパス",
+  "plugins.keywords": "キーワード",
+  "plugins.additionalInfo": "追加情報",
+  "plugins.homepage": "ホームページ",
+  "plugins.minVersion": "最小バージョン",
 };
 
 export default ja_JP;
