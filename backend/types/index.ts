@@ -41,6 +41,7 @@ export interface Server {
   autoRestart?: boolean;
   blockSameIP?: boolean;
   forwardAddress?: string; // バックアップ転送サーバー
+  pluginsEnabled?: boolean; // プラグインシステムの有効/無効
   description?: string;
   players?: Player[];
   executablePath?: string; // サーバー実行ファイルのパス
@@ -246,5 +247,57 @@ export class APIError extends Error {
   ) {
     super(message);
     this.name = 'APIError';
+  }
+}
+
+// プラグイン関連の型
+export interface PluginMetadata {
+  name: string;
+  version: string;
+  description?: string;
+  author?: string;
+  docs?: string;
+}
+
+export interface Plugin {
+  id: string;
+  metadata: PluginMetadata;
+  enabled: boolean;
+  filePath: string;
+  loaded: boolean;
+  error?: string;
+}
+
+export interface PluginContext {
+  serverId: string;
+  metadata: PluginMetadata;
+}
+
+// プラグインAPI
+export namespace PluginAPI {
+  // プラグイン一覧取得
+  export interface GetPluginsRequest {
+    serverId: string;
+  }
+  export interface GetPluginsResponse {
+    plugins: Plugin[];
+  }
+
+  // プラグイン有効化/無効化
+  export interface TogglePluginRequest {
+    serverId: string;
+    pluginId: string;
+    enabled: boolean;
+  }
+  export interface TogglePluginResponse {
+    plugin: Plugin;
+  }
+
+  // プラグイン再読み込み
+  export interface RefreshPluginsRequest {
+    serverId: string;
+  }
+  export interface RefreshPluginsResponse {
+    plugins: Plugin[];
   }
 }
