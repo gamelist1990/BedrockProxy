@@ -93,6 +93,8 @@ function ServerDetails() {
   const [consoleLines, setConsoleLines] = useState<string[]>([]);
   const [consoleInput, setConsoleInput] = useState("");
   const [isSendingCommand, setIsSendingCommand] = useState(false);
+  const [autoScrollConsole, setAutoScrollConsole] = useState(true);
+  const [autoStart, setAutoStart] = useState(false);
   const [autoRestart, setAutoRestart] = useState(false);
   const [forwardAddress, setForwardAddress] = useState("");
   const [customForwardAddress, setCustomForwardAddress] = useState("");
@@ -159,6 +161,7 @@ function ServerDetails() {
       
       // 設定値を初期化
       setTags(data.server.tags ?? []);
+      setAutoStart(data.server.autoStart ?? false);
       setAutoRestart(data.server.autoRestart ?? false);
       setForwardAddress(data.server.forwardAddress ?? "");
       setBlockSameIP(data.server.blockSameIP ?? false);
@@ -325,15 +328,16 @@ function ServerDetails() {
     };
   }, [handleServerUpdated, handleServerStatusChanged, handlePlayerJoined, handlePlayerLeft, handleConsoleOutput, loadServerData]);
 
-  // 新しいコンソール行が追加されたら自動でスクロール
+  // 新しいコンソール行が追加されたら自動でスクロール（設定に応じて）
   useEffect(() => {
+    if (!autoScrollConsole) return;
     const el = consoleRef.current;
     if (!el) return;
     // 少し遅延して最新行がレンダリングされるのを待つ
     requestAnimationFrame(() => {
       el.scrollTop = el.scrollHeight;
     });
-  }, [consoleLines]);
+  }, [consoleLines, autoScrollConsole]);
 
   if (isLoading) {
     return (
@@ -803,6 +807,22 @@ function ServerDetails() {
                     {t('console.title')}
                   </Typography>
                   <Stack direction="row" spacing={1} alignItems="center">
+                    <FormControlLabel
+                      control={
+                        <Switch
+                          checked={autoScrollConsole}
+                          onChange={(e) => setAutoScrollConsole(e.target.checked)}
+                          size="small"
+                          color="primary"
+                        />
+                      }
+                      label={
+                        <Typography variant="caption" sx={{ whiteSpace: 'nowrap' }}>
+                          Auto-scroll
+                        </Typography>
+                      }
+                      sx={{ m: 0 }}
+                    />
                     <Chip 
                       label={server.status === "online" ? "ライブ" : "オフライン"} 
                       color={server.status === "online" ? "success" : "default"} 
@@ -984,6 +1004,27 @@ function ServerDetails() {
                     {t('settings.auto')}
                   </Typography>
                   <Stack spacing={3} className="auto-settings">
+                    <FormControlLabel
+                      control={
+                        <Switch 
+                          checked={autoStart} 
+                          onChange={(e) => {
+                            const newValue = e.target.checked;
+                            setAutoStart(newValue);
+                            handleSettingChange({ autoStart: newValue });
+                          }}
+                          color="primary"
+                        />
+                      }
+                      label={
+                        <Box>
+                          <Typography variant="body2">{t('settings.autoStart')}</Typography>
+                          <Typography variant="caption" className="muted">
+                            {t('settings.autoStartDesc')}
+                          </Typography>
+                        </Box>
+                      }
+                    />
                     <FormControlLabel
                       control={
                         <Switch 

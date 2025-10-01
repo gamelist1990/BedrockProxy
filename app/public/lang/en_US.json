@@ -141,6 +141,8 @@
   "settings.ipv4Fixed": "IPv4 is fixed",
   "settings.description": "Description Memo",
   "settings.auto": "Auto Settings",
+  "settings.autoStart": "Auto Start on App Launch",
+  "settings.autoStartDesc": "Automatically start this server when the application launches",
   "settings.autoRestart": "Auto Restart",
   "settings.backupForward": "Backup Forward Settings",
   "settings.backupDestination": "Backup Destination",

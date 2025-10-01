@@ -37,6 +37,7 @@ export interface Server {
   maxPlayers: number;
   iconUrl?: string;
   tags?: string[];
+  autoStart?: boolean; // アプリ起動時に自動起動
   autoRestart?: boolean;
   blockSameIP?: boolean;
   forwardAddress?: string; // バックアップ転送サーバー
@@ -90,6 +91,7 @@ export namespace ServerAPI {
     iconUrl?: string;
     tags?: string[];
     description?: string;
+    autoStart?: boolean;
     autoRestart?: boolean;
     blockSameIP?: boolean;
     forwardAddress?: string;

@@ -24,6 +24,7 @@ export interface Server {
   maxPlayers: number;
   iconUrl?: string;
   tags?: string[];
+  autoStart?: boolean;
   autoRestart?: boolean;
   blockSameIP?: boolean;
   forwardAddress?: string;
@@ -244,6 +245,7 @@ export class BedrockProxyAPI {
     iconUrl?: string;
     tags?: string[];
     description?: string;
+    autoStart?: boolean;
     autoRestart?: boolean;
     blockSameIP?: boolean;
     forwardAddress?: string;
