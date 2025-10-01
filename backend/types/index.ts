@@ -266,6 +266,7 @@ export interface Plugin {
   filePath: string;
   loaded: boolean;
   error?: string;
+  hasNodeModules?: boolean; // Indicates if plugin has its own node_modules folder
 }
 
 export interface PluginContext {
