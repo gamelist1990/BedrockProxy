@@ -63,6 +63,36 @@ export interface WebSocketMessage<T = any> {
 
 export type EventCallback<T = any> = (data: T) => void;
 
+// デフォルトサーバーフィールド（新しいキーはここに追加）
+const DEFAULT_SERVER_FIELDS: Partial<Server> = {
+  status: "offline",
+  playersOnline: 0,
+  maxPlayers: 20,
+  tags: [],
+  autoStart: false,
+  autoRestart: false,
+  blockSameIP: false,
+  pluginsEnabled: false,
+  plugins: {},
+  players: [],
+  udpConnections: [],
+  mode: "normal"
+};
+
+// サーバーデータの正規化（欠損キーを補完）
+function normalizeServer(server: any): Server {
+  return {
+    ...DEFAULT_SERVER_FIELDS,
+    ...server,
+    createdAt: server.createdAt ? new Date(server.createdAt) : new Date(),
+    updatedAt: server.updatedAt ? new Date(server.updatedAt) : new Date(),
+    players: server.players?.map((player: any) => ({
+      ...player,
+      joinTime: new Date(player.joinTime),
+    })) || [],
+  };
+}
+
 export class BedrockProxyAPI {
   private connectionManager = wsClient;
   private eventCallbacks = new Map<string, EventCallback[]>();
@@ -223,26 +253,14 @@ export class BedrockProxyAPI {
   // サーバー一覧取得
   public async getServers(): Promise<Server[]> {
     const response = await this.sendRequest<{ servers: Server[] }>('servers.getAll');
-    return response.servers.map(server => ({
-      ...server,
-      createdAt: new Date(server.createdAt),
-      updatedAt: new Date(server.updatedAt),
-      players: server.players?.map(player => ({
-        ...player,
-        joinTime: new Date(player.joinTime),
-      })),
-    }));
+    return response.servers.map(server => normalizeServer(server));
   }
 
   // サーバー詳細取得
   public async getServerDetails(id: string): Promise<{ server: Server; players: Player[] }> {
     const response = await this.sendRequest<{ server: Server; players: Player[] }>('servers.getDetails', { id });
     return {
-      server: {
-        ...response.server,
-        createdAt: new Date(response.server.createdAt),
-        updatedAt: new Date(response.server.updatedAt),
-      },
+      server: normalizeServer(response.server),
       players: response.players.map(player => ({
         ...player,
         joinTime: new Date(player.joinTime),
@@ -267,21 +285,13 @@ export class BedrockProxyAPI {
     serverDirectory?: string;
   }): Promise<Server> {
     const response = await this.sendRequest<{ server: Server }>('servers.add', serverData);
-    return {
-      ...response.server,
-      createdAt: new Date(response.server.createdAt),
-      updatedAt: new Date(response.server.updatedAt),
-    };
+    return normalizeServer(response.server);
   }
 
   // サーバー更新
   public async updateServer(id: string, updates: Partial<Omit<Server, 'id' | 'createdAt' | 'updatedAt' | 'players' | 'playersOnline'>>): Promise<Server> {
     const response = await this.sendRequest<{ server: Server }>('servers.update', { id, updates });
-    return {
-      ...response.server,
-      createdAt: new Date(response.server.createdAt),
-      updatedAt: new Date(response.server.updatedAt),
-    };
+    return normalizeServer(response.server);
   }
 
   // サーバー削除
@@ -292,11 +302,7 @@ export class BedrockProxyAPI {
   // サーバー操作（開始/停止/再起動/ブロック）
   public async performServerAction(id: string, action: 'start' | 'stop' | 'restart', targetIP?: string): Promise<Server> {
     const response = await this.sendRequest<{ server: Server }>('servers.action', { id, action, targetIP });
-    return {
-      ...response.server,
-      createdAt: new Date(response.server.createdAt),
-      updatedAt: new Date(response.server.updatedAt),
-    };
+    return normalizeServer(response.server);
   }
 
   // イベント購読
@@ -390,11 +396,7 @@ export class BedrockProxyAPI {
       detectedInfo,
       customConfig
     });
-    return {
-      ...response.server,
-      createdAt: new Date(response.server.createdAt),
-      updatedAt: new Date(response.server.updatedAt),
-    };
+    return normalizeServer(response.server);
   }
 
   // サーバーコンソール取得
