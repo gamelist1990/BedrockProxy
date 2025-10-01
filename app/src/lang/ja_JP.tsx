@@ -232,6 +232,9 @@ export const ja_JP = {
   "plugins.folder": "フォルダ",
   "plugins.installedPlugins": "インストール済みプラグイン",
   "plugins.refresh": "リフレッシュ",
+  "plugins.refreshed": "更新しました",
+  "plugins.openFolder": "フォルダを開く",
+  "plugins.openFolderFailed": "フォルダを開けませんでした",
 };
 
 export default ja_JP;

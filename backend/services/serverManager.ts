@@ -1191,6 +1191,15 @@ export class ServerManager {
     await dataStorage.saveConfig(config);
   }
 
+  // システム情報取得
+  public getPluginsDirectory(): string {
+    return dataStorage.getPluginsDirectory();
+  }
+
+  public getDataDirectory(): string {
+    return dataStorage.getDataDirectory();
+  }
+
   // データの整合性チェック
   public async validateData() {
     return await dataStorage.validateData();

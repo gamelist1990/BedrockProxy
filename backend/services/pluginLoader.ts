@@ -74,11 +74,13 @@ export class PluginLoader {
   /**
    * Load a plugin from a folder structure
    * Folder structure: plugins/pluginName/index.js
+   * Optional: plugins/pluginName/package.json for metadata
    * Optional: plugins/pluginName/node_modules/ for dependencies
    */
   private async loadPluginFromFolder(folderName: string): Promise<Plugin | null> {
     const pluginPath = join(this.pluginDirectory, folderName);
     const indexPath = join(pluginPath, 'index.js');
+    const packageJsonPath = join(pluginPath, 'package.json');
     const nodeModulesPath = join(pluginPath, 'node_modules');
     
     try {
@@ -87,8 +89,33 @@ export class PluginLoader {
       // Check if plugin has its own node_modules
       const hasNodeModules = existsSync(nodeModulesPath);
       
-      // Parse plugin metadata
-      const metadata = this.parsePluginMetadata(code);
+      // Try to load metadata from package.json first
+      let metadata: PluginMetadata;
+      
+      if (existsSync(packageJsonPath)) {
+        try {
+          const packageJson = JSON.parse(await readFile(packageJsonPath, 'utf-8'));
+          metadata = {
+            name: packageJson.name || folderName,
+            version: packageJson.version || '1.0.0',
+            description: packageJson.description,
+            author: packageJson.author?.name || packageJson.author,
+            homepage: packageJson.homepage,
+            license: packageJson.license,
+            dependencies: packageJson.bedrockproxy?.dependencies || packageJson.peerDependencies,
+            keywords: packageJson.keywords,
+            minBedrockProxyVersion: packageJson.bedrockproxy?.minVersion
+          };
+          
+          console.log(`📦 Loaded plugin metadata from package.json: ${metadata.name}@${metadata.version}`);
+        } catch (error) {
+          console.warn(`Failed to parse package.json for ${folderName}, falling back to code parsing:`, error);
+          metadata = this.parsePluginMetadata(code);
+        }
+      } else {
+        // Fall back to parsing metadata from code
+        metadata = this.parsePluginMetadata(code);
+      }
       
       const plugin: Plugin = {
         id: folderName,
@@ -96,13 +123,14 @@ export class PluginLoader {
         enabled: false,
         filePath: indexPath,
         loaded: true,
-        hasNodeModules
+        hasNodeModules,
+        pluginPath // Store the full plugin directory path
       };
 
-      console.log(`Loaded plugin: ${folderName}${hasNodeModules ? ' (with node_modules)' : ''}`);
+      console.log(`✅ Loaded plugin: ${metadata.name}@${metadata.version}${hasNodeModules ? ' (with node_modules)' : ''}`);
       return plugin;
     } catch (error) {
-      console.error(`Error loading plugin folder ${folderName}:`, error);
+      console.error(`❌ Error loading plugin folder ${folderName}:`, error);
       return null;
     }
   }

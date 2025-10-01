@@ -72,6 +72,11 @@ export class MessageRouter {
           data = await this.handleSaveConfig(message.data);
           break;
 
+        // システム情報
+        case "system.getInfo":
+          data = this.handleGetSystemInfo(message.data);
+          break;
+
         // イベント購読関連
         case "subscribe":
           return this.handleSubscribe(message.data, client);
@@ -363,6 +368,14 @@ export class MessageRouter {
 
     await this.serverManager.saveAppConfig(data.config);
     return { success: true };
+  }
+
+  // システム情報取得
+  private handleGetSystemInfo(data: ServerAPI.GetSystemInfoRequest): ServerAPI.GetSystemInfoResponse {
+    return {
+      pluginsDirectory: this.serverManager.getPluginsDirectory(),
+      dataDirectory: this.serverManager.getDataDirectory()
+    };
   }
 
   // サーバーコンソール取得

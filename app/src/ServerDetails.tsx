@@ -110,7 +110,7 @@ function ServerDetails() {
   
   // Track unsaved changes in operations tab
   const [hasUnsavedOperations, setHasUnsavedOperations] = useState(false);
-  const [savedOperationsState, setSavedOperationsState] = useState({
+  const [, setSavedOperationsState] = useState({
     autoStart: false,
     autoRestart: false,
     blockSameIP: false,
@@ -189,11 +189,13 @@ function ServerDetails() {
       const initialAutoRestart = data.server.autoRestart ?? false;
       const initialForwardAddress = data.server.forwardAddress ?? "";
       const initialBlockSameIP = data.server.blockSameIP ?? false;
+      const initialPluginsEnabled = data.server.pluginsEnabled ?? false;
       
       setAutoStart(initialAutoStart);
       setAutoRestart(initialAutoRestart);
       setForwardAddress(initialForwardAddress);
       setBlockSameIP(initialBlockSameIP);
+      setPluginsEnabled(initialPluginsEnabled);
       
       // Set saved operations state
       setSavedOperationsState({
@@ -1303,7 +1305,24 @@ function ServerDetails() {
                     control={
                       <Switch
                         checked={pluginsEnabled}
-                        onChange={(e) => setPluginsEnabled(e.target.checked)}
+                        onChange={async (e) => {
+                          const newValue = e.target.checked;
+                          setPluginsEnabled(newValue);
+                          // 即座にサーバー設定を保存
+                          try {
+                            await bedrockProxyAPI.updateServer(server.id, {
+                              pluginsEnabled: newValue
+                            });
+                            setSnackbarMessage(t('settings.saveSuccess') || '設定を保存しました');
+                            setSnackbarSeverity('success');
+                            setSnackbarOpen(true);
+                          } catch (error) {
+                            console.error('Failed to save pluginsEnabled:', error);
+                            setSnackbarMessage(t('settings.saveFailed') || '設定の保存に失敗しました');
+                            setSnackbarSeverity('error');
+                            setSnackbarOpen(true);
+                          }
+                        }}
                         color="primary"
                       />
                     }
@@ -1327,26 +1346,54 @@ function ServerDetails() {
                       <Typography variant="subtitle2" className="section-title">
                         {t('plugins.installedPlugins') || 'インストール済みプラグイン'}
                       </Typography>
-                      <Button
-                        variant="outlined"
-                        size="small"
-                        onClick={() => {
-                          setLoadingPlugins(true);
-                          // TODO: Load plugins from backend
-                          setTimeout(() => {
-                            setLoadingPlugins(false);
-                            setSnackbarMessage(t('plugins.refreshed') || 'プラグインリストを更新しました');
-                            setSnackbarSeverity('info');
-                            setSnackbarOpen(true);
-                          }, 500);
-                        }}
-                        disabled={loadingPlugins}
-                      >
-                        {loadingPlugins ? (
-                          <CircularProgress size={16} sx={{ mr: 1 }} />
-                        ) : null}
-                        {t('plugins.refresh') || '更新'}
-                      </Button>
+                      <Stack direction="row" spacing={1}>
+                        <Button
+                          variant="outlined"
+                          size="small"
+                          onClick={async () => {
+                            try {
+                              const systemInfo = await bedrockProxyAPI.getSystemInfo();
+                              // Tauri環境かチェック
+                              if (typeof window !== 'undefined' && '__TAURI__' in window) {
+                                const { Command } = await import('@tauri-apps/plugin-shell');
+                                await Command.create('explorer', systemInfo.pluginsDirectory).execute();
+                              } else {
+                                // Web環境の場合はアラート表示
+                                setSnackbarMessage(`Plugin folder: ${systemInfo.pluginsDirectory}`);
+                                setSnackbarSeverity('info');
+                                setSnackbarOpen(true);
+                              }
+                            } catch (error) {
+                              console.error('Failed to open plugins folder:', error);
+                              setSnackbarMessage(t('plugins.openFolderFailed') || 'フォルダを開けませんでした');
+                              setSnackbarSeverity('error');
+                              setSnackbarOpen(true);
+                            }
+                          }}
+                        >
+                          {t('plugins.openFolder') || 'フォルダを開く'}
+                        </Button>
+                        <Button
+                          variant="outlined"
+                          size="small"
+                          onClick={() => {
+                            setLoadingPlugins(true);
+                            // TODO: Load plugins from backend
+                            setTimeout(() => {
+                              setLoadingPlugins(false);
+                              setSnackbarMessage(t('plugins.refreshed') || 'プラグインリストを更新しました');
+                              setSnackbarSeverity('info');
+                              setSnackbarOpen(true);
+                            }, 500);
+                          }}
+                          disabled={loadingPlugins}
+                        >
+                          {loadingPlugins ? (
+                            <CircularProgress size={16} sx={{ mr: 1 }} />
+                          ) : null}
+                          {t('plugins.refresh') || '更新'}
+                        </Button>
+                      </Stack>
                     </Stack>
                     
                     {plugins.length === 0 ? (

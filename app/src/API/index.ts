@@ -510,6 +510,12 @@ export class BedrockProxyAPI {
   }
 
   // sidecar-based auto-start handled inline in reconnect event
+
+  // システム情報を取得
+  public async getSystemInfo(): Promise<{ pluginsDirectory: string; dataDirectory: string }> {
+    const response = await this.sendRequest<{ pluginsDirectory: string; dataDirectory: string }>('system.getInfo', {});
+    return response;
+  }
 }
 
 // シングルトンインスタンス

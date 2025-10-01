@@ -206,6 +206,13 @@ export namespace ServerAPI {
   export interface SaveConfigResponse {
     success: true;
   }
+
+  // システム情報
+  export interface GetSystemInfoRequest {}
+  export interface GetSystemInfoResponse {
+    pluginsDirectory: string;
+    dataDirectory: string;
+  }
 }
 
 // イベント通知のタイプ
@@ -271,7 +278,12 @@ export interface PluginMetadata {
   version: string;
   description?: string;
   author?: string;
+  homepage?: string;
+  license?: string;
   docs?: string;
+  dependencies?: Record<string, string>;
+  keywords?: string[];
+  minBedrockProxyVersion?: string;
 }
 
 export interface Plugin {
@@ -279,6 +291,7 @@ export interface Plugin {
   metadata: PluginMetadata;
   enabled: boolean;
   filePath: string;
+  pluginPath?: string; // Full plugin directory path (for folder-based plugins)
   loaded: boolean;
   error?: string;
   hasNodeModules?: boolean; // Indicates if plugin has its own node_modules folder

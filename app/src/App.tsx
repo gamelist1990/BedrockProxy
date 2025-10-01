@@ -33,7 +33,6 @@ import DeleteOutlineRoundedIcon from "@mui/icons-material/DeleteOutlineRounded";
 import LanguageIcon from "@mui/icons-material/Language";
 import BugReportIcon from "@mui/icons-material/BugReport";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
-import ExpandLessIcon from "@mui/icons-material/ExpandLess";
 import {
   LanguageProvider,
   useLanguageContext,
@@ -47,7 +46,6 @@ import { resourceDir } from '@tauri-apps/api/path';
 import { Command } from '@tauri-apps/plugin-shell';
 import { listen } from '@tauri-apps/api/event';
 import ServerDetails from "./ServerDetails";
-import TitleBar from "./TitleBar";
 import "./css/App.css";
 import ServerAvatar from './components/ServerAvatar';
 
@@ -1576,17 +1574,8 @@ function ServerList() {
 }
 
 function App() {
-  // Check if we're running in Tauri
-  const [isTauri, setIsTauri] = useState(false);
-
-  useEffect(() => {
-    // Check if window.__TAURI__ exists
-    setIsTauri(typeof window !== 'undefined' && '__TAURI__' in window);
-  }, []);
-
   return (
     <LanguageProvider>
-      {isTauri && <TitleBar />}
       <Routes>
         <Route path="/" element={<ServerList />} />
         <Route path="/server/:id" element={<ServerDetails />} />

@@ -207,5 +207,8 @@
   "plugins.requirement": "Requirement",
   "plugins.folder": "Folder",
   "plugins.installedPlugins": "Installed Plugins",
-  "plugins.refresh": "Refresh"
+  "plugins.refresh": "Refresh",
+  "plugins.refreshed": "Refreshed",
+  "plugins.openFolder": "Open Folder",
+  "plugins.openFolderFailed": "Failed to open folder"
 }

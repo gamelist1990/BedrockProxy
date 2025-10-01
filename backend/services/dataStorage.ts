@@ -31,11 +31,21 @@ export class DataStorage {
     this.serversPath = join(this.dataDir, "servers.json");
   }
 
+  // プラグインディレクトリのパスを取得
+  public getPluginsDirectory(): string {
+    return join(this.dataDir, "plugins");
+  }
+
   // 初期化（ディレクトリ作成）
   public async initialize(): Promise<void> {
     try {
       await mkdir(this.dataDir, { recursive: true });
       console.log(`📁 Data directory initialized: ${this.dataDir}`);
+      
+      // プラグインディレクトリの作成
+      const pluginsDir = this.getPluginsDirectory();
+      await mkdir(pluginsDir, { recursive: true });
+      console.log(`📦 Plugins directory initialized: ${pluginsDir}`);
       
       // 初期データファイルの作成
       await this.ensureDefaultFiles();
