@@ -100,7 +100,7 @@ const targetDir = path.resolve('../app/src-tauri/binaries');
 let targetFilename;
 switch (bunTarget) {
   case 'bun-windows-x64':
-    targetFilename = 'backend-x86_64-pc-windows-msvc.exe';
+    targetFilename = 'backend-x86_64-pc-windows-gnu.exe';
     break;
   case 'bun-linux-x64':
     targetFilename = 'backend-x86_64-unknown-linux-gnu';
