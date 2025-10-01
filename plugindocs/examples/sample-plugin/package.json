@@ -13,14 +13,7 @@
     "bedrock"
   ],
   "bedrockproxy": {
-    "minVersion": "1.0.0",
-    "permissions": [
-      "server:command",
-      "player:manage",
-      "storage:write",
-      "http:request",
-      "fs:write"
-    ]
+    "minVersion": "1.0.0"
   },
   "dependencies": {},
   "devDependencies": {}

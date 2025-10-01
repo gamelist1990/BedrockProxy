@@ -1,0 +1,11 @@
+{
+  "name": "player-stats",
+  "version": "1.0.0",
+  "description": "プレイヤーの接続時間や統計情報を記録・表示するプラグイン",
+  "main": "index.js",
+  "author": "BedrockProxy Team",
+  "license": "MIT",
+  "bedrockproxy": {
+    "minVersion": "1.0.0"
+  }
+}
