@@ -7,14 +7,22 @@
 import { readdir, readFile, watch, stat } from 'fs/promises';
 import { existsSync, statSync } from 'fs';
 import { join, basename, dirname } from 'path';
+import { Module } from 'module';
+import { PluginAPI } from '../API/pluginAPI.js';
 import type { Plugin, PluginMetadata } from '../types';
 
 export class PluginLoader {
   private plugins: Map<string, Plugin> = new Map();
   private pluginContexts: Map<string, any> = new Map();
+  private pluginAPIs: Map<string, PluginAPI> = new Map();
   private watchers: Map<string, any> = new Map();
 
-  constructor(private serverId: string, private pluginDirectory: string) {}
+  constructor(
+    private serverId: string, 
+    private pluginDirectory: string,
+    private serverManager: any,
+    private storageDir: string
+  ) {}
 
   /**
    * Load all plugins from the plugin directory
@@ -210,12 +218,75 @@ export class PluginLoader {
       throw new Error(`Plugin ${pluginId} failed to load`);
     }
 
-    // TODO: Execute plugin in sandboxed environment
-    plugin.enabled = true;
-    this.plugins.set(pluginId, plugin);
+    try {
+      // Create Plugin API instance
+      const api = new PluginAPI(
+        plugin.metadata.name,
+        plugin.pluginPath || dirname(plugin.filePath),
+        this.serverId,
+        this.serverManager,
+        this.storageDir
+      );
+      
+      this.pluginAPIs.set(pluginId, api);
+      
+      // Load and execute plugin code
+      const code = await readFile(plugin.filePath, 'utf-8');
+      
+      // Create plugin context with API
+      const pluginContext: any = {
+        api,
+        require: (moduleName: string) => {
+          // Allow requiring from plugin's node_modules if it exists
+          if (plugin.pluginPath && plugin.hasNodeModules) {
+            try {
+              const modulePath = join(plugin.pluginPath, 'node_modules', moduleName);
+              return require(modulePath);
+            } catch (error) {
+              // Fall back to global require
+              return require(moduleName);
+            }
+          }
+          return require(moduleName);
+        },
+        console: {
+          log: (...args: any[]) => api.info(args.join(' ')),
+          error: (...args: any[]) => api.error(args.join(' ')),
+          warn: (...args: any[]) => api.warn(args.join(' ')),
+          info: (...args: any[]) => api.info(args.join(' ')),
+          debug: (...args: any[]) => api.debug(args.join(' '))
+        },
+        setTimeout: (callback: Function, ms: number) => api.setTimeout(ms, () => callback()),
+        setInterval: (callback: Function, ms: number) => api.setInterval(ms, () => callback()),
+        clearTimeout: (id: number) => api.clearTimer(id),
+        clearInterval: (id: number) => api.clearTimer(id)
+      };
+      
+      // Register the registerPlugin function
+      let pluginInstance: any = null;
+      pluginContext.registerPlugin = (factory: Function) => {
+        pluginInstance = factory();
+      };
+      
+      // Execute plugin code in context
+      const func = new Function(...Object.keys(pluginContext), code);
+      func(...Object.values(pluginContext));
+      
+      // Call onEnable if it exists
+      if (pluginInstance && pluginInstance.onEnable) {
+        await pluginInstance.onEnable({ api, serverId: this.serverId });
+      }
+      
+      this.pluginContexts.set(pluginId, pluginInstance);
+      plugin.enabled = true;
+      this.plugins.set(pluginId, plugin);
 
-    console.log(`Plugin ${plugin.metadata.name} enabled`);
-    return plugin;
+      console.log(`✅ Plugin ${plugin.metadata.name} enabled`);
+      return plugin;
+    } catch (error) {
+      console.error(`❌ Failed to enable plugin ${pluginId}:`, error);
+      throw error;
+    }
   }
 
   /**
@@ -227,12 +298,30 @@ export class PluginLoader {
       throw new Error(`Plugin ${pluginId} not found`);
     }
 
-    // TODO: Stop plugin execution
-    plugin.enabled = false;
-    this.plugins.set(pluginId, plugin);
+    try {
+      // Call onDisable if it exists
+      const pluginInstance = this.pluginContexts.get(pluginId);
+      if (pluginInstance && pluginInstance.onDisable) {
+        await pluginInstance.onDisable();
+      }
+      
+      // Cleanup API resources
+      const api = this.pluginAPIs.get(pluginId);
+      if (api) {
+        api.cleanup();
+        this.pluginAPIs.delete(pluginId);
+      }
+      
+      this.pluginContexts.delete(pluginId);
+      plugin.enabled = false;
+      this.plugins.set(pluginId, plugin);
 
-    console.log(`Plugin ${plugin.metadata.name} disabled`);
-    return plugin;
+      console.log(`✅ Plugin ${plugin.metadata.name} disabled`);
+      return plugin;
+    } catch (error) {
+      console.error(`❌ Failed to disable plugin ${pluginId}:`, error);
+      throw error;
+    }
   }
 
   /**
@@ -247,6 +336,26 @@ export class PluginLoader {
    */
   getPlugin(pluginId: string): Plugin | undefined {
     return this.plugins.get(pluginId);
+  }
+  
+  /**
+   * Trigger event in all enabled plugins
+   */
+  triggerEvent(eventName: string, data: any): void {
+    for (const [pluginId, api] of this.pluginAPIs.entries()) {
+      try {
+        api._triggerEvent(eventName, data);
+      } catch (error) {
+        console.error(`Error triggering event ${eventName} in plugin ${pluginId}:`, error);
+      }
+    }
+  }
+  
+  /**
+   * Get plugin API instance
+   */
+  getPluginAPI(pluginId: string): PluginAPI | undefined {
+    return this.pluginAPIs.get(pluginId);
   }
 
   /**

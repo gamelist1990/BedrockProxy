@@ -1311,7 +1311,9 @@ function ServerDetails() {
                           // 即座にサーバー設定を保存
                           try {
                             await bedrockProxyAPI.updateServer(server.id, {
-                              pluginsEnabled: newValue
+                              pluginsEnabled: newValue,
+                              // プラグイン有効化時に plugins オブジェクトを初期化
+                              plugins: newValue ? (server.plugins || {}) : undefined
                             });
                             setSnackbarMessage(t('settings.saveSuccess') || '設定を保存しました');
                             setSnackbarSeverity('success');
@@ -1351,40 +1353,32 @@ function ServerDetails() {
                           variant="outlined"
                           size="small"
                           onClick={async () => {
+                            console.log('[Plugin Refresh] Starting plugin reload...');
+                            setLoadingPlugins(true);
+                            
                             try {
                               const systemInfo = await bedrockProxyAPI.getSystemInfo();
-                              // Tauri環境かチェック
-                              if (typeof window !== 'undefined' && '__TAURI__' in window) {
-                                const { Command } = await import('@tauri-apps/plugin-shell');
-                                await Command.create('explorer', systemInfo.pluginsDirectory).execute();
-                              } else {
-                                // Web環境の場合はアラート表示
-                                setSnackbarMessage(`Plugin folder: ${systemInfo.pluginsDirectory}`);
-                                setSnackbarSeverity('info');
-                                setSnackbarOpen(true);
-                              }
+                              console.log('[Plugin Refresh] Plugin directory:', systemInfo.pluginsDirectory);
+                              
+                              // Load plugins from backend
+                              console.log('[Plugin Refresh] Loading plugins for server:', server.id);
+                              const loadedPlugins = await bedrockProxyAPI.loadPlugins(server.id);
+                              console.log('[Plugin Refresh] Loaded plugins:', loadedPlugins);
+                              
+                              // Update state so plugins display in UI
+                              setPlugins(loadedPlugins);
+                              
+                              setSnackbarMessage(`${t('plugins.refreshed') || 'プラグインリストを更新しました'} (${loadedPlugins.length}件)`);
+                              setSnackbarSeverity('success');
+                              setSnackbarOpen(true);
                             } catch (error) {
-                              console.error('Failed to open plugins folder:', error);
-                              setSnackbarMessage(t('plugins.openFolderFailed') || 'フォルダを開けませんでした');
+                              console.error('[Plugin Refresh] Failed to load plugins:', error);
+                              setSnackbarMessage(t('plugins.refreshFailed') || 'プラグインの読み込みに失敗しました');
                               setSnackbarSeverity('error');
                               setSnackbarOpen(true);
-                            }
-                          }}
-                        >
-                          {t('plugins.openFolder') || 'フォルダを開く'}
-                        </Button>
-                        <Button
-                          variant="outlined"
-                          size="small"
-                          onClick={() => {
-                            setLoadingPlugins(true);
-                            // TODO: Load plugins from backend
-                            setTimeout(() => {
+                            } finally {
                               setLoadingPlugins(false);
-                              setSnackbarMessage(t('plugins.refreshed') || 'プラグインリストを更新しました');
-                              setSnackbarSeverity('info');
-                              setSnackbarOpen(true);
-                            }, 500);
+                            }
                           }}
                           disabled={loadingPlugins}
                         >

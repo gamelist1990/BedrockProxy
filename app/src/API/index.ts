@@ -40,6 +40,7 @@ export interface Server {
   blockSameIP?: boolean;
   forwardAddress?: string;
   pluginsEnabled?: boolean;
+  plugins?: Record<string, any>; // プラグイン設定（プラグインID -> 設定オブジェクト）
   description?: string;
   docs?: string;
   players?: Player[];
@@ -515,6 +516,40 @@ export class BedrockProxyAPI {
   public async getSystemInfo(): Promise<{ pluginsDirectory: string; dataDirectory: string }> {
     const response = await this.sendRequest<{ pluginsDirectory: string; dataDirectory: string }>('system.getInfo', {});
     return response;
+  }
+  
+  // ==================== Plugin API ====================
+  
+  // プラグイン読み込み
+  public async loadPlugins(serverId: string): Promise<any[]> {
+    console.log(`[API] Loading plugins for server ${serverId}`);
+    const response = await this.sendRequest<{ plugins: any[] }>('plugins.load', { serverId });
+    console.log(`[API] Loaded plugins:`, response.plugins);
+    return response.plugins;
+  }
+  
+  // プラグイン一覧取得
+  public async getPlugins(serverId: string): Promise<any[]> {
+    console.log(`[API] Getting plugins for server ${serverId}`);
+    const response = await this.sendRequest<{ plugins: any[] }>('plugins.getAll', { serverId });
+    console.log(`[API] Got plugins:`, response.plugins);
+    return response.plugins;
+  }
+  
+  // プラグイン有効化
+  public async enablePlugin(serverId: string, pluginId: string): Promise<any> {
+    console.log(`[API] Enabling plugin ${pluginId} for server ${serverId}`);
+    const response = await this.sendRequest<{ plugin: any }>('plugins.enable', { serverId, pluginId });
+    console.log(`[API] Plugin enabled:`, response.plugin);
+    return response.plugin;
+  }
+  
+  // プラグイン無効化
+  public async disablePlugin(serverId: string, pluginId: string): Promise<any> {
+    console.log(`[API] Disabling plugin ${pluginId} for server ${serverId}`);
+    const response = await this.sendRequest<{ plugin: any }>('plugins.disable', { serverId, pluginId });
+    console.log(`[API] Plugin disabled:`, response.plugin);
+    return response.plugin;
   }
 }
 
