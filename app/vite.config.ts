@@ -31,4 +31,10 @@ export default defineConfig(async () => ({
       ignored: ["**/src-tauri/**"],
     },
   },
+
+  // Add build configuration to suppress chunk size warnings
+  build: {
+    // Setting to 0 disables the warning entirely
+    chunkSizeWarningLimit: 0,
+  },
 }));
